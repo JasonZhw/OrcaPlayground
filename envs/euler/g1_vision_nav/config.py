@@ -1,0 +1,230 @@
+"""Scene-independent configuration for the G1 vision-navigation demo."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+G1_MODEL_XML = PROJECT_ROOT / "assets" / "g1" / "g1_29dof_camera.xml"
+G1_LOCOMOTION_ONNX = PROJECT_ROOT / "assets" / "g1" / "models" / "dec_loco" / "model_6600.onnx"
+G1_LOCOMOTION_CONFIG = PROJECT_ROOT / "assets" / "g1" / "config" / "g1_29dof_hist.yaml"
+
+
+@dataclass(frozen=True)
+class CameraConfig:
+    """G1 head-camera stream settings.
+
+    The fixed spawnable exposes three independent Studio RGB streams. No metric
+    depth endpoint has been identified, so depth remains disabled by default.
+    """
+
+    entity_name: str = "camera_head"
+    rgb_port: int = 7072
+    left_rgb_port: int = 7071
+    right_rgb_port: int = 7070
+    depth_port: int | None = None
+    width: int = 320
+    height: int = 240
+    vertical_fov_deg: float = 75.0
+    first_frame_timeout_s: float = 10.0
+    enable_depth_preview: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.entity_name:
+            raise ValueError("entity_name must not be empty")
+        rgb_ports = (self.rgb_port, self.left_rgb_port, self.right_rgb_port)
+        if any(not 1 <= port <= 65535 for port in rgb_ports):
+            raise ValueError("RGB camera ports must be in [1, 65535]")
+        if len(set(rgb_ports)) != len(rgb_ports):
+            raise ValueError("head, left, and right RGB ports must be different")
+        if self.depth_port is not None:
+            if not 1 <= self.depth_port <= 65535:
+                raise ValueError("depth_port must be in [1, 65535]")
+            if self.depth_port in rgb_ports:
+                raise ValueError("depth_port must differ from all RGB ports")
+        if self.enable_depth_preview and self.depth_port is None:
+            raise ValueError("enable_depth_preview requires a known depth_port")
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("camera resolution must be positive")
+        if not 0.0 < self.vertical_fov_deg < 180.0:
+            raise ValueError("vertical_fov_deg must be in (0, 180)")
+        if self.first_frame_timeout_s <= 0.0:
+            raise ValueError("first_frame_timeout_s must be positive")
+
+
+@dataclass(frozen=True)
+class TimingConfig:
+    """Rates for physics, low-level locomotion, and high-level navigation."""
+
+    physics_hz: int = 1000
+    locomotion_hz: int = 50
+    navigation_hz: int = 10
+
+    def __post_init__(self) -> None:
+        if min(self.physics_hz, self.locomotion_hz, self.navigation_hz) <= 0:
+            raise ValueError("all control rates must be positive")
+        if self.physics_hz % self.locomotion_hz != 0:
+            raise ValueError("physics_hz must be divisible by locomotion_hz")
+        if self.locomotion_hz % self.navigation_hz != 0:
+            raise ValueError("locomotion_hz must be divisible by navigation_hz")
+
+    @property
+    def physics_steps_per_locomotion_step(self) -> int:
+        return self.physics_hz // self.locomotion_hz
+
+    @property
+    def locomotion_steps_per_navigation_step(self) -> int:
+        return self.locomotion_hz // self.navigation_hz
+
+
+@dataclass(frozen=True)
+class CommandLimits:
+    """Conservative initial limits for commands sent to the G1 policy."""
+
+    max_forward_mps: float = 0.15
+    max_backward_mps: float = 0.08
+    max_lateral_mps: float = 0.08
+    max_yaw_rate_rps: float = 0.35
+    max_forward_accel_mps2: float = 0.30
+    max_lateral_accel_mps2: float = 0.25
+    max_yaw_accel_rps2: float = 0.70
+
+    def __post_init__(self) -> None:
+        values = (
+            self.max_forward_mps,
+            self.max_backward_mps,
+            self.max_lateral_mps,
+            self.max_yaw_rate_rps,
+            self.max_forward_accel_mps2,
+            self.max_lateral_accel_mps2,
+            self.max_yaw_accel_rps2,
+        )
+        if min(values) <= 0.0:
+            raise ValueError("all command limits must be positive")
+
+
+@dataclass(frozen=True)
+class NavigationConfig:
+    """Point-goal controller and episode safety settings."""
+
+    goal_tolerance_m: float = 0.35
+    slowdown_radius_m: float = 0.90
+    turn_in_place_bearing_rad: float = 0.60
+    minimum_forward_mps: float = 0.04
+    bearing_gain: float = 1.20
+    lateral_gain: float = 0.40
+    startup_stand_s: float = 2.0
+    fall_height_m: float = 0.60
+    fall_tilt_rad: float = 0.80
+    collision_stop: bool = True
+
+    def __post_init__(self) -> None:
+        positive_values = (
+            self.goal_tolerance_m,
+            self.slowdown_radius_m,
+            self.turn_in_place_bearing_rad,
+            self.minimum_forward_mps,
+            self.bearing_gain,
+            self.lateral_gain,
+            self.startup_stand_s,
+            self.fall_height_m,
+            self.fall_tilt_rad,
+        )
+        if min(positive_values) <= 0.0:
+            raise ValueError("navigation settings must be positive")
+        if self.slowdown_radius_m <= self.goal_tolerance_m:
+            raise ValueError("slowdown_radius_m must exceed goal_tolerance_m")
+
+
+@dataclass(frozen=True)
+class VisualAvoidanceConfig:
+    """RGB workbench detector and conservative local-avoidance settings.
+
+    This first detector is deliberately scoped to the green workbenches in the
+    current Demo 1 layout. It provides a deterministic visual baseline before a
+    learned, category-independent perception model is introduced.
+    """
+
+    roi_bottom_fraction: float = 0.72
+    minimum_green: int = 70
+    minimum_blue: int = 55
+    minimum_green_red_gap: int = 18
+    minimum_blue_red_gap: int = 8
+    minimum_green_blue_gap: int = -15
+    slow_risk_fraction: float = 0.008
+    blocked_risk_fraction: float = 0.04
+    hard_stop_risk_fraction: float = 0.12
+    clear_risk_fraction: float = 0.003
+    avoidance_hold_steps: int = 60
+    clear_side_margin: float = 0.005
+    crawl_forward_mps: float = 0.03
+    approach_forward_mps: float = 0.08
+    avoidance_lateral_mps: float = 0.08
+    avoidance_yaw_rate_rps: float = 0.28
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.roi_bottom_fraction <= 1.0:
+            raise ValueError("roi_bottom_fraction must be in (0, 1]")
+        color_values = (
+            self.minimum_green,
+            self.minimum_blue,
+            self.minimum_green_red_gap,
+            self.minimum_blue_red_gap,
+        )
+        if min(color_values) < 0:
+            raise ValueError("color thresholds must be non-negative")
+        fractions = (
+            self.clear_risk_fraction,
+            self.slow_risk_fraction,
+            self.blocked_risk_fraction,
+            self.hard_stop_risk_fraction,
+        )
+        if not all(0.0 <= value <= 1.0 for value in fractions):
+            raise ValueError("risk fractions must be in [0, 1]")
+        if not (
+            self.clear_risk_fraction
+            < self.slow_risk_fraction
+            < self.blocked_risk_fraction
+            < self.hard_stop_risk_fraction
+        ):
+            raise ValueError("risk thresholds must be strictly increasing")
+        if self.avoidance_hold_steps <= 0:
+            raise ValueError("avoidance_hold_steps must be positive")
+        if self.clear_side_margin < 0.0:
+            raise ValueError("clear_side_margin must be non-negative")
+        velocities = (
+            self.crawl_forward_mps,
+            self.approach_forward_mps,
+            self.avoidance_lateral_mps,
+            self.avoidance_yaw_rate_rps,
+        )
+        if min(velocities) <= 0.0:
+            raise ValueError("avoidance velocities must be positive")
+        if self.crawl_forward_mps > self.approach_forward_mps:
+            raise ValueError("crawl_forward_mps must not exceed approach_forward_mps")
+
+
+@dataclass(frozen=True)
+class SceneConfig:
+    """Asset identifiers; the environment path is filled after asset selection."""
+
+    environment_asset_path: str | None = None
+    environment_actor_name: str | None = None
+    robot_asset_path: str = "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda"
+    robot_actor_name: str = "g1_pick_usda"
+
+
+@dataclass(frozen=True)
+class G1VisionNavConfig:
+    """Top-level configuration shared by the future Env and entry script."""
+
+    camera: CameraConfig = field(default_factory=CameraConfig)
+    timing: TimingConfig = field(default_factory=TimingConfig)
+    command_limits: CommandLimits = field(default_factory=CommandLimits)
+    navigation: NavigationConfig = field(default_factory=NavigationConfig)
+    visual_avoidance: VisualAvoidanceConfig = field(default_factory=VisualAvoidanceConfig)
+    scene: SceneConfig = field(default_factory=SceneConfig)
+
+
+DEFAULT_CONFIG = G1VisionNavConfig()

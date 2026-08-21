@@ -14,6 +14,8 @@ import numpy as np
 import os
 import sys
 import time
+import io
+import zipfile
 
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.utils import get_schedule_fn, get_linear_fn
@@ -458,8 +460,20 @@ def test_model(
         env = OrcaGymAsyncSubprocVecEnv(env_fns, agent_num)
         env.setup_curriculum(curriculum_list[0]["name"])
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        model: PPO = PPO.load(model_file, env=env, device=device)
+
+        original_torch_load = torch.load
+        def torch_load_zip_compat(file, *args, **kwargs):
+            if isinstance(file, zipfile.ZipExtFile):
+                file = io.BytesIO(file.read())
+            return original_torch_load(file, *args, **kwargs)
+
+
+        try:
+            torch.load = torch_load_zip_compat
+
+            model: PPO = PPO.load(model_file, env=env, device=device)
+        finally:
+            torch.load = original_torch_load
 
         testing_started = True
         testing_model(

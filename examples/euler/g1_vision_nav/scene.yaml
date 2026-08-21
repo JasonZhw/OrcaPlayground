@@ -1,0 +1,59 @@
+# Fill this file after selecting an environment in the OrcaLab asset center.
+environment:
+  layout_file: /home/jason77/SY/demo1_v1.json
+  layout_version: "3.0"
+  actor_count: 15
+  obstacle_center_bounds_xy: [[-30.5466, -21.4469], [-21.3716, -6.0527]]
+  walkable_bounds_xy: null
+  ground_height_m: 0.0
+
+robot:
+  asset_path: assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
+  actor_name: g1_pick_usda
+  spawn_position_xyz: [-18.5, -13.5, 0.0]
+  spawn_rotation_wxyz: [1.0, 0.0, 0.0, 0.0]
+  exported_camera_count: 0
+  camera_visual_bodies: [head_camera1, head_camera2]
+  camera_sensor_status: studio_component_rgb_validated
+  camera_rgb_ports:
+    camera_head: 7072
+    camera_left: 7071
+    camera_right: 7070
+  camera_head_view: steep_downward
+  depth_port: null
+
+navigation:
+  goal_sampling_bounds_xy: null
+  goal_tolerance_m: 0.35
+  episode_timeout_s: 60.0
+  collision_geom_names: []
+  point_goal_status: validated
+  visual_avoidance_status: green_workbench_baseline_validated
+  visual_avoidance_scope: current_layout_green_workbenches_only
+  command_rates_hz:
+    physics: 1000
+    locomotion: 50
+    navigation: 10
+  command_limits:
+    forward_mps: 0.15
+    lateral_mps: 0.08
+    yaw_rate_rps: 0.35
+  online_validations:
+    forward_1m:
+      final_distance_m: 0.310
+      checks: 125/125
+    left_goal:
+      goal_xy: [-18.5, -12.7]
+      final_distance_m: 0.313
+      minimum_distance_m: 0.296
+      checks: 156/156
+    green_workbench_avoidance:
+      goal_xy: [-22.0, -15.7]
+      run_steps: 4000
+      initial_distance_m: 3.864
+      final_distance_m: 0.309
+      minimum_distance_m: 0.293
+      maximum_visual_risk_fraction: 0.0569
+      visual_intervention_steps: 282
+      unsafe_collision: false
+      checks: 655/655
