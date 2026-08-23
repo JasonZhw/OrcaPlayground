@@ -15,6 +15,21 @@ class CameraNotReadyError(RuntimeError):
     """Raised when a camera frame is requested before its stream is ready."""
 
 
+class _RetryingCameraWrapper(CameraWrapper):
+    """Reconnect when Studio recreates the camera stream after AddActor."""
+
+    RETRY_INTERVAL_S = 0.10
+
+    def loop(self) -> None:
+        while self.running:
+            try:
+                super().loop()
+            except Exception:
+                pass
+            if self.running:
+                time.sleep(self.RETRY_INTERVAL_S)
+
+
 @dataclass(frozen=True)
 class CameraFrame:
     """Owned image snapshot and its monotonically increasing stream index."""
@@ -41,7 +56,10 @@ class G1CameraStreams:
         """Start enabled streams in background decoder threads."""
         if self._started:
             return
-        self._rgb_camera = CameraWrapper(f"{self.config.entity_name}_rgb", self.config.rgb_port)
+        self._rgb_camera = _RetryingCameraWrapper(
+            f"{self.config.entity_name}_rgb",
+            self.config.rgb_port,
+        )
         self._rgb_camera.start()
         self._started = True
         try:
@@ -49,7 +67,7 @@ class G1CameraStreams:
                 depth_port = self.config.depth_port
                 if depth_port is None:
                     raise CameraNotReadyError("no depth stream is configured")
-                self._depth_camera = CameraWrapper(
+                self._depth_camera = _RetryingCameraWrapper(
                     f"{self.config.entity_name}_depth_preview",
                     depth_port,
                 )

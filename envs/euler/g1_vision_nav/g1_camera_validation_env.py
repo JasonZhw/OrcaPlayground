@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from envs.euler.g1_vision_nav.camera_preview import CameraPreviewWindow
 from envs.euler.g1_vision_nav.camera_stream import (
     CameraFrame,
     CameraNotReadyError,
@@ -28,6 +29,8 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
         *args,
         camera_config: CameraConfig,
         sample_path: Path,
+        show_camera_window: bool = False,
+        camera_window_port: int = 8765,
         **kwargs,
     ) -> None:
         self.camera_config = camera_config
@@ -38,10 +41,16 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
         self._last_frame_index = -1
         self._latest_frame: CameraFrame | None = None
         self._saving_video = False
+        self._camera_preview = CameraPreviewWindow(
+            enabled=show_camera_window,
+            port=camera_window_port,
+        )
         super().__init__(*args, **kwargs)
 
     def before_loop(self, verifier) -> None:
         """Activate Studio RGB capture before the first render cycle."""
+        if self.sample_path.exists():
+            self.sample_path.unlink()
         camera_count = int(self.model.model_info.get("ncam", 0))
         verifier.observe(
             "camera_backend",
@@ -51,7 +60,7 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
 
         camera = self.camera_config
         self.locomotion.set_commands(
-            stand=0,
+            stand=1,
             lin_vel=(0.0, 0.0),
             ang_vel=0.0,
         )
@@ -72,6 +81,7 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
         os.makedirs(self.VIDEO_DIR, exist_ok=True)
         self.begin_save_video(str(self.VIDEO_DIR), capture_mode=0)
         self._saving_video = True
+        self._camera_preview.start()
         sync_frame = self.get_current_frame()
         verifier.check(
             "studio_camera_sync_enabled",
@@ -96,10 +106,12 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
             return
         if step == self._first_frame_step:
             return
-        if step <= 0 or step % self.FRAME_CHECK_INTERVAL != 0:
-            return
 
         frame = self._require_streams().get_rgb()
+        self._latest_frame = frame
+        self._camera_preview.show(frame.image, self._camera_preview_lines(frame))
+        if step <= 0 or step % self.FRAME_CHECK_INTERVAL != 0:
+            return
         verifier.check(
             f"rgb_frame_increasing_{step}",
             frame.index > self._last_frame_index,
@@ -108,7 +120,6 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
             f"RGB 帧号持续增长（step={step}）",
         )
         self._last_frame_index = frame.index
-        self._latest_frame = frame
 
     def observe_step(self, step: int, verifier) -> None:
         """Keep this test stationary; locomotion phases belong to the prior test."""
@@ -138,24 +149,31 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
                 "验证期间 RGB 流持续更新",
             )
 
-            self.sample_path.parent.mkdir(parents=True, exist_ok=True)
-            Image.fromarray(frame.image, mode="RGB").save(self.sample_path)
-            verifier.check(
-                "rgb_sample_saved",
-                self.sample_path.is_file() and self.sample_path.stat().st_size > 100,
-                str(self.sample_path),
-                "non-empty PNG",
-                "保存 RGB 样本",
-            )
-            verifier.observe(
-                "rgb_sample_ready",
-                f"相机样本已保存：{self.sample_path}",
-            )
+            if self._should_save_rgb_sample():
+                self.sample_path.parent.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(frame.image, mode="RGB").save(self.sample_path)
+                verifier.check(
+                    "rgb_sample_saved",
+                    self.sample_path.is_file() and self.sample_path.stat().st_size > 100,
+                    str(self.sample_path),
+                    "non-empty PNG",
+                    "到达巡检点后保存 RGB 样本",
+                )
+                verifier.observe(
+                    "rgb_sample_ready",
+                    f"巡检照片已保存：{self.sample_path}",
+                )
+            else:
+                verifier.observe(
+                    "rgb_sample_skipped",
+                    "机器人尚未到达最终巡检点，本次不保存照片",
+                )
         finally:
             self._stop_video_recording()
 
     def close(self) -> None:
         """Stop decoder threads and disable Studio camera capture."""
+        self._camera_preview.close()
         if self._camera_streams is not None:
             self._camera_streams.stop()
             self._camera_streams = None
@@ -172,6 +190,10 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
         except (AttributeError, RuntimeError):
             pass
         super().close()
+
+    def _should_save_rgb_sample(self) -> bool:
+        """Subclasses may require a task condition before saving a frame."""
+        return True
 
     def _stop_video_recording(self) -> None:
         if not self._saving_video:
@@ -221,6 +243,7 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
         self._first_frame_step = -1 if step is None else step
         self._last_frame_index = frame.index
         self._latest_frame = frame
+        self._camera_preview.show(frame.image, self._camera_preview_lines(frame))
         self._check_frame(frame, verifier, "first")
         verifier.check(
             "rgb_first_frame_received",
@@ -234,6 +257,12 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
             f"camera_head RGB 已连接：shape={frame.image.shape}, frame={frame.index}",
         )
         return True
+
+    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
+        return [
+            f"{self.agent_name} / {self.camera_config.entity_name}",
+            f"RGB frame: {frame.index}",
+        ]
 
     def _activate_camera_viewport(self, verifier) -> None:
         actor_prefix = f"{self.agent_name}_"

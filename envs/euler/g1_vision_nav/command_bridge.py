@@ -41,6 +41,34 @@ class CommandLimiter:
     def reset(self) -> None:
         self._previous = VelocityCommand.stopped()
 
+    def prepare_waypoint_transition(self, max_forward_mps: float) -> None:
+        """Drop stale lateral/yaw commands and cap momentum before a new segment."""
+        if max_forward_mps <= 0.0:
+            raise ValueError("waypoint transition speed must be positive")
+        if not self._previous.walk_enabled:
+            return
+        self._previous = VelocityCommand(
+            forward_mps=float(
+                np.clip(self._previous.forward_mps, 0.0, max_forward_mps)
+            ),
+            walk_enabled=True,
+        )
+
+    def cap_forward_speed(self, max_forward_mps: float) -> None:
+        """Limit corner-entry speed without discontinuously resetting steering."""
+        if max_forward_mps <= 0.0:
+            raise ValueError("forward speed cap must be positive")
+        if not self._previous.walk_enabled:
+            return
+        self._previous = VelocityCommand(
+            forward_mps=float(
+                np.clip(self._previous.forward_mps, 0.0, max_forward_mps)
+            ),
+            lateral_mps=self._previous.lateral_mps,
+            yaw_rate_rps=self._previous.yaw_rate_rps,
+            walk_enabled=True,
+        )
+
     def apply(self, requested: VelocityCommand, emergency_stop: bool = False) -> VelocityCommand:
         """Return a safe command; emergency or stand requests stop immediately."""
         if emergency_stop or not requested.walk_enabled:
@@ -81,4 +109,21 @@ def apply_velocity_command(controller: G1LocomotionController, command: Velocity
         lin_vel=(command.forward_mps, command.lateral_mps),
         ang_vel=command.yaw_rate_rps,
         stand=int(command.walk_enabled),
+    )
+
+
+def recovery_velocity_command(
+    requested: VelocityCommand,
+    forward_mps: float,
+) -> VelocityCommand:
+    """Use a bounded forward launch speed while preserving steering."""
+    if forward_mps <= 0.0:
+        raise ValueError("recovery forward speed must be positive")
+    if not requested.walk_enabled:
+        return requested
+    return VelocityCommand(
+        forward_mps=forward_mps,
+        lateral_mps=requested.lateral_mps,
+        yaw_rate_rps=requested.yaw_rate_rps,
+        walk_enabled=True,
     )

@@ -92,9 +92,18 @@ def publish_layout_with_g1(
     g1_asset_path: str,
     g1_position_xyz: tuple[float, float, float],
     g1_rotation_wxyz: tuple[float, float, float, float],
+    include_layout_actors: bool = False,
 ) -> int:
-    """Clear the runtime scene, then publish every layout actor plus one G1."""
-    layout_specs = load_layout_actor_specs(layout_path)
+    """Replace prior code-spawned entities and add one camera-registered G1.
+
+    The default keeps manually loaded Layout actors in Studio and publishes
+    only G1. ``include_layout_actors`` is retained for standalone reconstruction
+    of simple layouts that contain only AssetActor entries.
+    """
+    path = Path(layout_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    layout_specs = load_layout_actor_specs(path) if include_layout_actors else []
     if g1_actor_name in {spec.name for spec in layout_specs}:
         raise ValueError(f"G1 actor name collides with a layout actor: {g1_actor_name!r}")
 

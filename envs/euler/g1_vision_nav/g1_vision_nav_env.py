@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 
+from envs.euler.g1_vision_nav.camera_stream import CameraFrame
 from envs.euler.g1_vision_nav.command_bridge import (
     CommandLimiter,
     apply_velocity_command,
@@ -29,6 +31,11 @@ from envs.euler.g1_vision_nav.point_goal_navigator import (
     PointGoalNavigator,
     world_goal_in_body_frame,
 )
+from envs.euler.g1_vision_nav.safety_monitor import (
+    NavigationSafetyMonitor,
+    NavigationSafetyStatus,
+)
+from envs.euler.g1_vision_nav.waypoint_route import WaypointRoute
 
 
 class G1VisionNavEnv(G1CameraValidationEnv):
@@ -40,7 +47,8 @@ class G1VisionNavEnv(G1CameraValidationEnv):
     def __init__(
         self,
         *args,
-        goal_xy_world: tuple[float, float],
+        goal_xy_world: tuple[float, float] | None = None,
+        waypoints_xy_world: Sequence[Sequence[float]] | None = None,
         camera_config: CameraConfig,
         sample_path: Path,
         timing_config: TimingConfig | None = None,
@@ -49,13 +57,21 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         navigator: VisualNavigator | None = None,
         **kwargs,
     ) -> None:
-        self.goal_xy_world = np.asarray(goal_xy_world, dtype=np.float64).reshape(2)
-        if not np.all(np.isfinite(self.goal_xy_world)):
-            raise ValueError("goal_xy_world must contain two finite values")
-
         self.timing_config = timing_config or TimingConfig()
         self.command_limits = command_limits or CommandLimits()
         self.navigation_config = navigation_config or NavigationConfig()
+        if (goal_xy_world is None) == (waypoints_xy_world is None):
+            raise ValueError("provide exactly one of goal_xy_world or waypoints_xy_world")
+        route_points = [goal_xy_world] if goal_xy_world is not None else waypoints_xy_world
+        self.route = WaypointRoute(
+            route_points,
+            waypoint_tolerance_m=self.navigation_config.waypoint_tolerance_m,
+            passage_tolerance_m=(
+                self.navigation_config.waypoint_passage_tolerance_m
+            ),
+            goal_tolerance_m=self.navigation_config.goal_tolerance_m,
+        )
+        self.goal_xy_world = self.route.current_goal
         self.navigator = navigator or PointGoalNavigator(
             navigation=self.navigation_config,
             limits=self.command_limits,
@@ -69,7 +85,7 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             raise ValueError("control period must be positive")
         self._navigation_stride = self.timing_config.locomotion_steps_per_navigation_step
         self._startup_steps = max(
-            self._navigation_stride,
+            0,
             math.ceil(self.navigation_config.startup_stand_s / control_period_s),
         )
         self._initial_distance_m: float | None = None
@@ -78,8 +94,21 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         self._goal_reached = False
         self._goal_bonus_awarded = False
         self._emergency_stop = False
+        self._terminal_safety_stop = False
         self._unsafe_collision: str | None = None
+        self._last_safety_reason: str | None = None
+        self._safety_recovery_count = 0
+        self._latest_safety_status: NavigationSafetyStatus | None = None
         self._latest_navigation_observation: NavigationObservation | None = None
+        self.safety_monitor = NavigationSafetyMonitor(
+            fall_confirmation_steps=self.navigation_config.fall_confirmation_steps,
+            collision_confirmation_steps=self.navigation_config.collision_confirmation_steps,
+            collision_recovery_steps=self.navigation_config.collision_recovery_steps,
+            collision_escape_steps=self.navigation_config.collision_escape_steps,
+            collision_recovery_grace_steps=(
+                self.navigation_config.collision_recovery_grace_steps
+            ),
+        )
         super().__init__(
             *args,
             camera_config=camera_config,
@@ -96,8 +125,15 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         self._goal_reached = False
         self._goal_bonus_awarded = False
         self._emergency_stop = False
+        self._terminal_safety_stop = False
         self._unsafe_collision = None
+        self._last_safety_reason = None
+        self._safety_recovery_count = 0
+        self._latest_safety_status = None
+        self.safety_monitor.reset()
         self._latest_navigation_observation = None
+        self.route.reset()
+        self.goal_xy_world = self.route.current_goal
         # The actor's world transform can still contain pre-publish data during
         # reset. Latch metrics after the first real simulation step instead.
         self._initial_distance_m = None
@@ -110,8 +146,10 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         super().before_loop(verifier)
         verifier.observe(
             "point_goal_navigation",
-            "G1 将先原地站立等待相机，再以低速自动转向并前往目标："
-            f"goal=({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f})",
+            "G1 将按顺序用当前位置、路径点和 base yaw 跟随直线路径："
+            + " → ".join(
+                f"({point[0]:.2f}, {point[1]:.2f})" for point in self.route.waypoints
+            ),
         )
 
     def compute_ctrl(self, step: int) -> np.ndarray:
@@ -133,21 +171,33 @@ class G1VisionNavEnv(G1CameraValidationEnv):
 
         state = self._read_planar_state()
         distance = float(np.linalg.norm(state["goal_xy_robot_m"]))
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)[:2]
+        route_remaining = self.route.remaining_distance_m(position)
         if self._initial_distance_m is None:
-            self._initial_distance_m = distance
-            self._minimum_distance_m = distance
+            self._initial_distance_m = route_remaining
+            self._minimum_distance_m = route_remaining
         else:
-            self._minimum_distance_m = min(self._minimum_distance_m, distance)
-        if distance <= self.navigation_config.goal_tolerance_m:
-            self._goal_reached = True
+            self._minimum_distance_m = min(self._minimum_distance_m, route_remaining)
 
-        if self._has_fallen(state):
-            self._emergency_stop = True
+        collision = None
         if self.navigation_config.collision_stop:
             collision = self._find_unsafe_collision()
-            if collision is not None:
-                self._unsafe_collision = collision
-                self._emergency_stop = True
+        safety = self.safety_monitor.update(
+            fallen=self._has_fallen(state),
+            collision=collision,
+        )
+        self._emergency_stop = safety.stop_active
+        self._terminal_safety_stop = safety.terminal
+        self._latest_safety_status = safety
+        self._unsafe_collision = collision
+        if safety.reason is not None:
+            self._last_safety_reason = safety.reason
+        if safety.recovered:
+            self._safety_recovery_count += 1
+            print(
+                "[INFO] Safety pause cleared; resuming route "
+                f"(recoveries={self._safety_recovery_count})"
+            )
 
         if step % self.NAVIGATION_LOG_INTERVAL != 0:
             return
@@ -160,17 +210,26 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         )
         verifier.check(
             f"navigation_safe_{step}",
-            not self._emergency_stop,
-            self._unsafe_collision or "safe",
-            "no fall or unsafe collision",
-            f"导航安全状态（step={step}）",
+            not self._terminal_safety_stop,
+            safety.reason or "safe",
+            "no confirmed fall",
+            f"导航安全状态（短暂接触可恢复，step={step}）",
         )
         command = self.command_limiter.previous
         verifier.observe(
             f"navigation_state_{step}",
-            f"distance={distance:.3f}m, bearing={state['goal_bearing_rad']:.3f}rad, "
+            f"waypoint={self.route.current_index + 1}/{len(self.route.waypoints)}, "
+            f"position=({position[0]:.3f}, {position[1]:.3f}), "
+            f"heading={state['base_heading_rad']:.3f}rad, "
+            f"distance={distance:.3f}m, remaining={route_remaining:.3f}m, "
+            f"bearing={state['goal_bearing_rad']:.3f}rad, "
             f"command=({command.forward_mps:.3f}, {command.lateral_mps:.3f}, "
-            f"{command.yaw_rate_rps:.3f})",
+            f"{command.yaw_rate_rps:.3f}), safety_stop={safety.stop_active}, "
+            f"safety_reason={safety.reason or 'none'}, "
+            f"recovery_grace={safety.recovery_grace_steps}, "
+            f"collision_samples={safety.collision_steps}, "
+            f"collision_hold={safety.collision_hold_steps}, "
+            f"recoveries={self._safety_recovery_count}",
             step=step,
         )
 
@@ -181,8 +240,9 @@ class G1VisionNavEnv(G1CameraValidationEnv):
     def after_loop(self, verifier) -> None:
         """Save the last RGB sample and report the final point-goal state."""
         super().after_loop(verifier)
-        distance = self._goal_distance_m()
-        minimum_distance = min(self._minimum_distance_m, distance)
+        distance = self._final_goal_distance_m()
+        remaining = self._route_remaining_distance_m()
+        minimum_distance = min(self._minimum_distance_m, remaining)
         verifier.observe(
             "point_goal_final_state",
             f"目标导航结束：final_distance={distance:.3f}m, minimum_distance={minimum_distance:.3f}m",
@@ -190,9 +250,10 @@ class G1VisionNavEnv(G1CameraValidationEnv):
 
     def verify_final(self, verifier) -> None:
         """Require measurable progress, goal arrival, RGB, and no safety stop."""
-        final_distance = self._goal_distance_m()
+        final_distance = self._final_goal_distance_m()
         initial_distance = self._initial_distance_m
-        minimum_distance = min(self._minimum_distance_m, final_distance)
+        remaining = self._route_remaining_distance_m()
+        minimum_distance = min(self._minimum_distance_m, remaining)
         progress = 0.0 if initial_distance is None else initial_distance - minimum_distance
         required_progress = math.inf if initial_distance is None else max(0.20, initial_distance * 0.30)
         verifier.check(
@@ -204,17 +265,30 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         )
         verifier.check(
             "point_goal_reached",
-            final_distance <= self.navigation_config.goal_tolerance_m,
+            self.route.completed and final_distance <= self.navigation_config.goal_tolerance_m,
             final_distance,
             f"<={self.navigation_config.goal_tolerance_m}",
             "G1 到达目标容差范围并停止",
         )
         verifier.check(
+            "inspection_photo_saved",
+            self.route.completed
+            and self.sample_path.is_file()
+            and self.sample_path.stat().st_size > 100,
+            str(self.sample_path),
+            "non-empty PNG after final waypoint",
+            "到达电气柜巡检点后保存 RGB 照片",
+        )
+        verifier.check(
             "navigation_no_emergency_stop",
-            not self._emergency_stop,
-            self._unsafe_collision or "safe",
-            "safe",
-            "导航期间未跌倒且未发生非足部环境碰撞",
+            not self._terminal_safety_stop,
+            self._last_safety_reason or "safe",
+            "no confirmed fall",
+            "导航期间未发生连续确认的跌倒；短暂安全暂停允许自动恢复",
+        )
+        verifier.observe(
+            "navigation_safety_recoveries",
+            f"短暂碰撞/倾斜后自动恢复次数：{self._safety_recovery_count}",
         )
         verifier.check(
             "navigation_rgb_available",
@@ -225,15 +299,41 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         )
 
     def _requested_command(self, step: int) -> VelocityCommand:
-        if step < self._startup_steps or self._goal_reached or self._emergency_stop:
+        if step == 0:
+            return VelocityCommand(walk_enabled=True)
+        if self._goal_reached:
+            return VelocityCommand(walk_enabled=True)
+        if step < self._startup_steps or self._emergency_stop:
             return VelocityCommand.stopped()
+
+        state = self._read_planar_state()
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)[:2]
+        previous_index = self.route.current_index
+        update = self.route.update(position)
+        if update.advanced:
+            self.goal_xy_world = self.route.current_goal
+            self.navigator.on_waypoint_changed()
+            self.command_limiter.cap_forward_speed(
+                self.navigation_config.waypoint_turning_forward_mps
+            )
+            print(
+                f"[INFO] Waypoint {previous_index + 1} reached; "
+                f"next=({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f})"
+            )
+        if update.completed:
+            self._goal_reached = True
+            return VelocityCommand(walk_enabled=True)
 
         observation = self._build_navigation_observation()
         self._latest_navigation_observation = observation
-        if observation.goal_distance_m <= self.navigation_config.goal_tolerance_m:
-            self._goal_reached = True
-            return VelocityCommand.stopped()
-        return self.navigator.act(observation)
+        requested = self.navigator.act(observation)
+        safety = self._latest_safety_status
+        if safety is not None and safety.recovery_grace_steps > 0:
+            return self.navigator.recovery_command(
+                requested,
+                self.navigation_config.recovery_forward_mps,
+            )
+        return requested
 
     def _build_navigation_observation(self) -> NavigationObservation:
         state = self._read_planar_state()
@@ -256,6 +356,47 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             sim_time_s=float(self.data.time),
         )
 
+    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
+        lines = super()._camera_preview_lines(frame)
+        command = self.command_limiter.previous
+        observation = self._latest_navigation_observation
+        distance_text = "waiting"
+        pose_text = "waiting"
+        bearing_text = "waiting"
+        if observation is not None:
+            distance_text = f"{observation.goal_distance_m:.2f} m"
+            state = self._read_planar_state()
+            position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
+            pose_text = f"({position[0]:.2f}, {position[1]:.2f})"
+            bearing_text = f"{observation.goal_bearing_rad:+.2f}"
+        safety = self._latest_safety_status
+        if self._emergency_stop:
+            safety_text = "STOP"
+        elif safety is not None and safety.recovery_grace_steps > 0:
+            grace_seconds = safety.recovery_grace_steps / self.timing_config.navigation_hz
+            safety_text = f"RECOVER {grace_seconds:.1f}s"
+        elif safety is not None and safety.collision_steps > 0:
+            safety_text = (
+                f"CAUTION {safety.collision_steps}/"
+                f"{self.navigation_config.collision_confirmation_steps}"
+            )
+        else:
+            safety_text = "GO"
+        lines.extend(
+            (
+                f"Waypoint: {self.route.current_index + 1}/{len(self.route.waypoints)}"
+                f" | distance: {distance_text}",
+                f"Pose: {pose_text} | bearing={bearing_text}",
+                f"Command: vx={command.forward_mps:.2f} vy={command.lateral_mps:.2f}"
+                f" yaw={command.yaw_rate_rps:.2f}",
+                f"Safety: {safety_text}"
+                f" | recoveries={self._safety_recovery_count}",
+            )
+        )
+        if safety is not None and safety.reason is not None:
+            lines.append(f"Safety reason: {safety.reason}")
+        return lines
+
     def _read_planar_state(self) -> dict[str, np.ndarray | float]:
         pelvis_name = f"{self.agent_name}_pelvis"
         pelvis = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
@@ -277,6 +418,7 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             "pelvis_position_world": position,
             "goal_xy_robot_m": goal_robot,
             "goal_bearing_rad": float(np.arctan2(goal_robot[1], goal_robot[0])),
+            "base_heading_rad": float(np.arctan2(xmat[1, 0], xmat[0, 0])),
             "base_velocity_xy_mps": linear_velocity_body[:2].astype(np.float32),
             "base_yaw_rate_rps": float(angular_velocity_body[2]),
             "pitch_rad": pitch,
@@ -286,6 +428,19 @@ class G1VisionNavEnv(G1CameraValidationEnv):
     def _goal_distance_m(self) -> float:
         state = self._read_planar_state()
         return float(np.linalg.norm(state["goal_xy_robot_m"]))
+
+    def _final_goal_distance_m(self) -> float:
+        state = self._read_planar_state()
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)[:2]
+        return float(np.linalg.norm(self.route.final_goal - position))
+
+    def _route_remaining_distance_m(self) -> float:
+        state = self._read_planar_state()
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)[:2]
+        return self.route.remaining_distance_m(position)
+
+    def _should_save_rgb_sample(self) -> bool:
+        return self.route.completed
 
     def _has_fallen(self, state: dict[str, np.ndarray | float]) -> bool:
         position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
@@ -314,7 +469,7 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         return None
 
     def _compute_reward(self, obs: dict, action: np.ndarray) -> float:
-        distance = self._goal_distance_m()
+        distance = self._route_remaining_distance_m()
         previous_distance = self._reward_previous_distance_m
         progress = 0.0 if previous_distance is None else previous_distance - distance
         self._reward_previous_distance_m = distance
@@ -324,9 +479,9 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             self._goal_bonus_awarded = True
         if self._unsafe_collision is not None:
             reward -= 5.0
-        if self._emergency_stop and self._unsafe_collision is None:
+        if self._terminal_safety_stop:
             reward -= 10.0
         return float(reward)
 
     def _is_terminated(self, obs: dict) -> bool:
-        return self._goal_reached or self._emergency_stop
+        return self._goal_reached or self._terminal_safety_stop

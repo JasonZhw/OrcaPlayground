@@ -90,6 +90,18 @@ class VisualNavigator(Protocol):
         """Reset recurrent policy state at the beginning of an episode."""
         ...
 
+    def on_waypoint_changed(self) -> None:
+        """Discard local steering state that belongs to the previous waypoint."""
+        ...
+
+    def recovery_command(
+        self,
+        requested: VelocityCommand,
+        forward_mps: float,
+    ) -> VelocityCommand:
+        """Build a post-stop command that can escape a persistent contact."""
+        ...
+
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Produce one body-frame velocity command."""
         ...

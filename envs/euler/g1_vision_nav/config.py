@@ -80,15 +80,15 @@ class TimingConfig:
 
 @dataclass(frozen=True)
 class CommandLimits:
-    """Conservative initial limits for commands sent to the G1 policy."""
+    """Limits for route commands sent to the frozen G1 policy."""
 
-    max_forward_mps: float = 0.15
-    max_backward_mps: float = 0.08
-    max_lateral_mps: float = 0.08
-    max_yaw_rate_rps: float = 0.35
-    max_forward_accel_mps2: float = 0.30
-    max_lateral_accel_mps2: float = 0.25
-    max_yaw_accel_rps2: float = 0.70
+    max_forward_mps: float = 0.60
+    max_backward_mps: float = 0.10
+    max_lateral_mps: float = 0.15
+    max_yaw_rate_rps: float = 0.65
+    max_forward_accel_mps2: float = 0.60
+    max_lateral_accel_mps2: float = 0.40
+    max_yaw_accel_rps2: float = 1.30
 
     def __post_init__(self) -> None:
         values = (
@@ -108,71 +108,124 @@ class CommandLimits:
 class NavigationConfig:
     """Point-goal controller and episode safety settings."""
 
-    goal_tolerance_m: float = 0.35
-    slowdown_radius_m: float = 0.90
+    goal_tolerance_m: float = 0.20
+    waypoint_tolerance_m: float = 0.40
+    # Keep the crossed-waypoint fallback close to the actual path.  A wider
+    # corridor can select the next segment while G1 is still visibly far from
+    # the corner and make the requested yaw change abruptly.
+    waypoint_passage_tolerance_m: float = 0.40
+    slowdown_radius_m: float = 1.20
     turn_in_place_bearing_rad: float = 0.60
+    # Keep a small forward arc because the frozen policy turns poorly at an
+    # exact vx=0, but never let a large heading error retain cruise speed.
+    turning_forward_mps: float = 0.25
+    waypoint_turning_forward_mps: float = 0.20
+    waypoint_heading_release_rad: float = 0.35
     minimum_forward_mps: float = 0.04
+    forward_gain: float = 0.80
     bearing_gain: float = 1.20
-    lateral_gain: float = 0.40
-    startup_stand_s: float = 2.0
-    fall_height_m: float = 0.60
+    startup_stand_s: float = 0.0
+    fall_height_m: float = 0.30
     fall_tilt_rad: float = 0.80
     collision_stop: bool = True
+    fall_confirmation_steps: int = 3
+    collision_confirmation_steps: int = 3
+    collision_recovery_steps: int = 10
+    # Do not deadlock while stopped against an obstacle. After one second,
+    # release collision hold and let the route/vision command steer away.
+    collision_escape_steps: int = 10
+    # At 10 Hz this guarantees 5 seconds of uninterrupted recovery command.
+    collision_recovery_grace_steps: int = 50
+    recovery_forward_mps: float = 0.30
 
     def __post_init__(self) -> None:
         positive_values = (
             self.goal_tolerance_m,
+            self.waypoint_tolerance_m,
+            self.waypoint_passage_tolerance_m,
             self.slowdown_radius_m,
             self.turn_in_place_bearing_rad,
+            self.turning_forward_mps,
+            self.waypoint_turning_forward_mps,
+            self.waypoint_heading_release_rad,
             self.minimum_forward_mps,
+            self.forward_gain,
             self.bearing_gain,
-            self.lateral_gain,
-            self.startup_stand_s,
+            self.recovery_forward_mps,
             self.fall_height_m,
             self.fall_tilt_rad,
         )
         if min(positive_values) <= 0.0:
             raise ValueError("navigation settings must be positive")
+        if self.startup_stand_s < 0.0:
+            raise ValueError("startup_stand_s must be non-negative")
         if self.slowdown_radius_m <= self.goal_tolerance_m:
             raise ValueError("slowdown_radius_m must exceed goal_tolerance_m")
+        if self.waypoint_tolerance_m < self.goal_tolerance_m:
+            raise ValueError("waypoint_tolerance_m must not be smaller than goal_tolerance_m")
+        if self.waypoint_passage_tolerance_m < self.waypoint_tolerance_m:
+            raise ValueError("waypoint passage tolerance must cover waypoint tolerance")
+        if self.waypoint_heading_release_rad >= self.turn_in_place_bearing_rad:
+            raise ValueError("waypoint heading release must be below turn threshold")
+        if self.waypoint_turning_forward_mps > self.turning_forward_mps:
+            raise ValueError("waypoint turning speed must not exceed launch turning speed")
+        safety_steps = (
+            self.fall_confirmation_steps,
+            self.collision_confirmation_steps,
+            self.collision_recovery_steps,
+            self.collision_escape_steps,
+            self.collision_recovery_grace_steps,
+        )
+        if min(safety_steps) <= 0:
+            raise ValueError("safety confirmation and recovery steps must be positive")
 
 
 @dataclass(frozen=True)
 class VisualAvoidanceConfig:
-    """RGB workbench detector and conservative local-avoidance settings.
+    """Simple RGB color occupancy used as a near-obstacle proxy."""
 
-    This first detector is deliberately scoped to the green workbenches in the
-    current Demo 1 layout. It provides a deterministic visual baseline before a
-    learned, category-independent perception model is introduced.
-    """
-
-    roi_bottom_fraction: float = 0.72
-    minimum_green: int = 70
-    minimum_blue: int = 55
-    minimum_green_red_gap: int = 18
-    minimum_blue_red_gap: int = 8
-    minimum_green_blue_gap: int = -15
-    slow_risk_fraction: float = 0.008
-    blocked_risk_fraction: float = 0.04
-    hard_stop_risk_fraction: float = 0.12
-    clear_risk_fraction: float = 0.003
-    avoidance_hold_steps: int = 60
-    clear_side_margin: float = 0.005
-    crawl_forward_mps: float = 0.03
-    approach_forward_mps: float = 0.08
-    avoidance_lateral_mps: float = 0.08
-    avoidance_yaw_rate_rps: float = 0.28
+    # The head camera looks downward and includes G1's dark hands in the lower
+    # image.  Use the middle near-field strip for obstacle activation; the
+    # outer thirds remain useful only for choosing the clearer steering side.
+    roi_top_fraction: float = 0.25
+    roi_bottom_fraction: float = 0.55
+    dark_value_max: int = 65
+    green_minimum: int = 80
+    green_red_gap: int = 20
+    green_blue_gap: int = -15
+    yellow_red_minimum: int = 115
+    yellow_green_minimum: int = 100
+    yellow_blue_maximum: int = 120
+    yellow_blue_gap: int = 25
+    slow_risk_fraction: float = 0.08
+    blocked_risk_fraction: float = 0.20
+    hard_stop_risk_fraction: float = 0.40
+    clear_risk_fraction: float = 0.04
+    # Avoidance is a single latched steering correction, not a multi-stage
+    # turn/pass/rejoin state machine.  The correction fades over these clear
+    # frames before path-following resumes completely.
+    clear_confirmation_steps: int = 10
+    stale_frame_limit_steps: int = 10
+    clear_side_margin: float = 0.004
+    obstacle_approach_forward_mps: float = 0.15
+    near_obstacle_forward_mps: float = 0.05
+    clear_forward_mps: float = 0.25
+    avoidance_lateral_mps: float = 0.15
+    avoidance_yaw_rate_rps: float = 0.65
 
     def __post_init__(self) -> None:
-        if not 0.0 < self.roi_bottom_fraction <= 1.0:
-            raise ValueError("roi_bottom_fraction must be in (0, 1]")
+        if not 0.0 <= self.roi_top_fraction < self.roi_bottom_fraction <= 1.0:
+            raise ValueError("expected 0 <= roi_top_fraction < roi_bottom_fraction <= 1")
         color_values = (
-            self.minimum_green,
-            self.minimum_blue,
-            self.minimum_green_red_gap,
-            self.minimum_blue_red_gap,
+            self.dark_value_max,
+            self.green_minimum,
+            self.green_red_gap,
+            self.yellow_red_minimum,
+            self.yellow_green_minimum,
+            self.yellow_blue_maximum,
+            self.yellow_blue_gap,
         )
-        if min(color_values) < 0:
+        if min(color_values) < 0 or max(color_values) > 255:
             raise ValueError("color thresholds must be non-negative")
         fractions = (
             self.clear_risk_fraction,
@@ -189,20 +242,29 @@ class VisualAvoidanceConfig:
             < self.hard_stop_risk_fraction
         ):
             raise ValueError("risk thresholds must be strictly increasing")
-        if self.avoidance_hold_steps <= 0:
-            raise ValueError("avoidance_hold_steps must be positive")
+        confirmation_steps = (
+            self.clear_confirmation_steps,
+            self.stale_frame_limit_steps,
+        )
+        if min(confirmation_steps) <= 0:
+            raise ValueError("avoidance confirmation and stale-frame steps must be positive")
         if self.clear_side_margin < 0.0:
             raise ValueError("clear_side_margin must be non-negative")
         velocities = (
-            self.crawl_forward_mps,
-            self.approach_forward_mps,
+            self.obstacle_approach_forward_mps,
+            self.near_obstacle_forward_mps,
+            self.clear_forward_mps,
             self.avoidance_lateral_mps,
             self.avoidance_yaw_rate_rps,
         )
         if min(velocities) <= 0.0:
             raise ValueError("avoidance velocities must be positive")
-        if self.crawl_forward_mps > self.approach_forward_mps:
-            raise ValueError("crawl_forward_mps must not exceed approach_forward_mps")
+        if not (
+            self.near_obstacle_forward_mps
+            <= self.obstacle_approach_forward_mps
+            <= self.clear_forward_mps
+        ):
+            raise ValueError("expected near <= approach <= clear speeds")
 
 
 @dataclass(frozen=True)
@@ -212,7 +274,7 @@ class SceneConfig:
     environment_asset_path: str | None = None
     environment_actor_name: str | None = None
     robot_asset_path: str = "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda"
-    robot_actor_name: str = "g1_pick_usda"
+    robot_actor_name: str = "g1_vision_nav"
 
 
 @dataclass(frozen=True)

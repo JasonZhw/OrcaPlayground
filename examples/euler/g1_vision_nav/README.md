@@ -2,12 +2,51 @@
 
 > 面向学员与讲师的完整实训课程见 [BOOTCAMP.md](BOOTCAMP.md)。
 
-这个目录是 Demo 1 的新起点。机器人本体已从 Go2 切换为 Unitree G1；当前已完成 Layout 重建、固定 G1 生成、低层运控兼容验证、资产自带 Studio RGB 相机验证、点目标闭环和第一版 RGB 工作台避障。
+2026-08-22 已按新的核心诉求清理旧开发改动，并重建为一条最小链路。后文保留的早期单目标结果仅作为历史回归记录；当前正式入口以本节为准。
+
+## 当前唯一主入口
+
+```text
+左/右世界坐标路径点
+→ 根据实时位姿计算机器人坐标系 vx 和目标 yaw（正常路径 vy=0）
+→ camera_head RGB 检测深色、绿色、黄色区域
+→ 障碍转向连续叠加到路径 yaw，锁定较空一侧，清空后平滑回归
+→ 冻结 G1 locomotion ONNX
+→ 到达柜前 (19.2, 4.3) 后保存一张 RGB PNG
+```
+
+固定路线（2026-08-23 waypoint 修订版）：
+
+```text
+左线：(9.0, 3.5) → (10.0, 3.5) → (13.0, 7.1) → (19.2, 4.3)
+右线：(13.0, -5.0) → (19.2, 4.3)
+```
+
+左右路线默认运行 `8000` 个 50 Hz 控制步，即约 `160秒`；仍可通过 `--num-steps` 自定义。
+
+为减少重复运行时越过路径点或提前转向，中间 waypoint 同时使用 `0.40m` 到达圆和 `0.40m` 过点走廊，最终巡检点使用独立的 `0.20m` 到达半径。切换路段时保留已有 yaw、把前进速度压到 `0.20m/s`，再由指令限幅器连续过渡；新方向误差降到约 `20°` 后恢复正常巡航。G1 步态相位使用仿真时间推进，不再受渲染 FPS 或相机线程延迟影响。
+
+运行前在 OrcaLab 打开 `/home/jason77/SY/demo_v2.json` 并点击运行。Layout 中保留场景物体，Python 只替换代码生成的 `g1_vision_nav`。
+
+```bash
+cd /home/jason77/SY/OrcaPlayground
+conda activate orca
+
+# 左线，空旷路段最高 0.6m/s
+python examples/euler/g1_vision_nav/run_visual_avoidance.py --route left
+
+# 右线
+python examples/euler/g1_vision_nav/run_visual_avoidance.py --route right
+```
+
+只有最终路径点到达后才保存照片：左线默认为 `/tmp/g1_cabinet_left_rgb.png`，右线默认为 `/tmp/g1_cabinet_right_rgb.png`。可用 `--output` 修改路径。
+
+RGB 不能直接测量米制距离。本版“安全距离”特指颜色区域在画面中的占比。发现障碍后，前进速度随风险从 `0.15m/s` 连续降到 `0.05m/s`，侧移最高 `0.15m/s`；路径 yaw 与朝较空一侧的视觉 yaw 连续融合。中心区域清空后，视觉修正在 10 个连续 RGB 帧内逐步衰减，速度从约 `0.25m/s` 平滑恢复到主路径巡航，全程不倒车。桌面建议使用哑光、高饱和绿色或黄色，并与地面保持明显色差；改完 Layout 后需要根据真实截图微调阈值。
 
 ## 已确认的本地资产
 
 - OrcaLab G1 spawnable：`assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda`
-- 程序生成的 actor 名称：`g1_pick_usda`
+- 程序生成的 actor 名称：`g1_vision_nav`
 - 运控参考 MJCF：`assets/g1/g1_29dof_camera.xml`（独立本地模型，不是固定 spawnable）
 - 已验证的相机实体：`camera_head`
 - 头部 RGB WebSocket：`7072`
@@ -57,8 +96,9 @@ RGB + 机器人坐标系目标 + 本体速度 + 上一条指令
 - `envs/euler/g1_vision_nav/camera_stream.py`：实时 RGB 与可选 depth-preview 客户端。
 - `envs/euler/g1_vision_nav/command_bridge.py`：上层指令限幅，并映射到现有 `G1Locomotion.set_commands()`。
 - `envs/euler/g1_vision_nav/config.py`：相机端口、三层频率、初始安全速度和 G1 模型路径。
-- `envs/euler/g1_vision_nav/point_goal_navigator.py`：世界坐标目标到机体系目标的变换，以及低速点目标基线控制器。
-- `envs/euler/g1_vision_nav/visual_avoidance.py`：读取 7072 RGB、检测当前场景绿色工作台，并在点目标控制器外增加减速和带保持的局部绕行。
+- `envs/euler/g1_vision_nav/point_goal_navigator.py`：把当前路径点误差直接换算成 `vx`、`vy` 和目标角度。
+- `envs/euler/g1_vision_nav/waypoint_route.py`：按顺序管理左/右路线的中间点和最终巡检点。
+- `envs/euler/g1_vision_nav/visual_avoidance.py`：读取 7072 RGB，检测深色、绿色和黄色区域，并在路径控制外增加安全距离动作。
 - `envs/euler/g1_vision_nav/g1_pick_locomotion_env.py`：把现有 29-DoF 运控策略适配到 G1 Pick 的 45 个混合执行器。
 - `envs/euler/g1_vision_nav/g1_camera_validation_env.py`：相机资产预检、RGB 首帧/帧率/内容校验，同时维持原地站立。
 - `envs/euler/g1_vision_nav/g1_vision_nav_env.py`：同步相机、点目标、10 Hz 上层控制、50 Hz 冻结运控、reward 与安全急停。
@@ -68,11 +108,15 @@ RGB + 机器人坐标系目标 + 本体速度 + 上一条指令
 - `validate_locomotion.py`：暂不接视觉导航，只验证现有 G1 ONNX + PD 运控是否能站立和行走。
 - `validate_camera.py`：激活固定 G1 的 7072 Studio 头部实时流，让仿真先 render，再异步验证并保存 RGB 样本。
 - `run_point_goal.py`：运行自动点目标导航，可指定绝对目标或出生朝向前方的相对距离。
-- `run_visual_avoidance.py`：运行 7072 RGB 工作台检测、局部绕行和冻结 G1 运控的完整闭环。
+- `run_visual_avoidance.py`：当前正式入口，运行左/右路线、RGB 安全距离、冻结运控与柜前拍照。
 
 `G1VisionNavEnv` 已经完成第一阶段闭环：RGB 与导航状态同步进入 `NavigationObservation`，点目标基线暂时只使用相对目标和本体状态，尚未用 RGB 决策。下一阶段在同一个 `VisualNavigator` 接口下替换为视觉避障策略，无需修改底层 ONNX 运控。
 
-## 先验证 G1 运控
+## 历史验证资料（不再是当前运行入口）
+
+以下内容记录旧 `demo1_v1` 单目标实验，保留用于理解运控和相机调试。它使用旧坐标、旧速度和旧绿色工作台命令；不要用它启动当前左右巡检路线。当前操作只使用文档顶部的 `run_visual_avoidance.py --route left/right`。
+
+### 先验证 G1 运控
 
 当前 Layout 文件是 `/home/jason77/SY/demo1_v1.json`，包含 15 个场景物体，不包含 G1。脚本默认在障碍物东侧空地 `(-18.5, -13.5, 0)` 生成 G1，朝 `+x` 方向，首次前进会远离家具。
 
@@ -132,7 +176,7 @@ python examples/euler/g1_vision_nav/run_point_goal.py \
     --goal-x -18.5 --goal-y -12.7 --num-steps 900
 ```
 
-程序同时检查基座高度、倾角、策略输出、力矩触限、RGB 帧增长和非足部环境碰撞。脚部支撑接触允许；跌倒或身体碰到环境物体会触发速度急停。
+程序同时检查基座高度、倾角、策略输出、力矩触限、RGB 帧增长和非足部环境碰撞。脚部支撑接触允许；跌倒会保持急停，身体碰撞则先停 1 秒，再依据 RGB 左右占比向较空一侧执行 5 秒脱困，避免贴住障碍后永久锁死。
 
 2026-08-21 在线结果：
 
@@ -155,6 +199,12 @@ conda activate orca
 cd /home/jason77/SY/OrcaPlayground
 python examples/euler/g1_vision_nav/run_visual_avoidance.py --num-steps 4000
 ```
+
+导航程序默认启动独立的 G1 第一视角浏览器窗口，地址为
+`http://127.0.0.1:8765`。页面显示 `camera_head` 实时 RGB，并叠加当前
+waypoint、速度指令、视觉风险、避障模式和安全状态。关闭或刷新浏览器页面
+不会停止导航；如果浏览器没有自动打开，手动访问该地址即可。可用
+`--no-camera-window` 禁用，或用 `--camera-window-port 8766` 修改端口。
 
 默认出生点仍为 `(-18.5, -13.5)`，目标为 `(-22.0, -15.7)`；直线路径会接近 `industrial_workbench_1`，因而能够验证 RGB 是否真实改变了指令。也可覆盖目标：
 

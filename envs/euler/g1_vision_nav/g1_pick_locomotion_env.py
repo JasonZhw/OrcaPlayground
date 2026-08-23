@@ -7,6 +7,37 @@ from g1_locomotion import G1Locomotion
 from locomotion_env import LocomotionEnv
 from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv
 
+from envs.euler.g1_vision_nav.simulation_gait_clock import SimulationGaitClock
+
+
+class SimulationClockG1Locomotion(G1Locomotion):
+    """Run the frozen policy with a gait phase tied to simulation time."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._gait_clock: SimulationGaitClock | None = None
+        self._simulation_phase = np.zeros((1, 1), dtype=np.float64)
+        super().__init__(*args, **kwargs)
+        self._gait_clock = SimulationGaitClock(self.gait_period)
+
+    def reset(self) -> None:
+        super().reset()
+        self._simulation_phase = np.zeros((1, 1), dtype=np.float64)
+        if self._gait_clock is not None:
+            self._gait_clock.reset()
+
+    def compute_q_target(self, env: OrcaGymEulerEnv) -> np.ndarray:
+        if self._gait_clock is None:
+            raise RuntimeError("simulation gait clock is not initialized")
+        phase = self._gait_clock.update(
+            float(env.data.time),
+            walking=bool(self.stand_command[0, 0]),
+        )
+        self._simulation_phase[0, 0] = phase
+        return super().compute_q_target(env)
+
+    def _get_phase_time(self) -> np.ndarray:
+        return self._simulation_phase.copy()
+
 
 class G1PickLocomotionEnv(LocomotionEnv):
     """Run the 29-DoF locomotion policy on the 45-actuator picking asset.
@@ -24,7 +55,7 @@ class G1PickLocomotionEnv(LocomotionEnv):
     def initialize_simulation(self):
         """Load the scene without the legacy actuator/sensor suffix scanner."""
         OrcaGymEulerEnv.initialize_simulation(self)
-        self.locomotion = G1Locomotion(agent_name=self.agent_name)
+        self.locomotion = SimulationClockG1Locomotion(agent_name=self.agent_name)
         self._torque_clip_count = 0
         self._torque_total_count = 0
         self._policy_action_finite = True
