@@ -59,7 +59,7 @@ class TimingConfig:
 
     physics_hz: int = 1000
     locomotion_hz: int = 50
-    navigation_hz: int = 10
+    navigation_hz: int = 50
 
     def __post_init__(self) -> None:
         if min(self.physics_hz, self.locomotion_hz, self.navigation_hz) <= 0:
@@ -85,10 +85,10 @@ class CommandLimits:
     max_forward_mps: float = 0.15
     max_backward_mps: float = 0.08
     max_lateral_mps: float = 0.08
-    max_yaw_rate_rps: float = 0.35
+    max_yaw_rate_rps: float = 0.50
     max_forward_accel_mps2: float = 0.30
     max_lateral_accel_mps2: float = 0.25
-    max_yaw_accel_rps2: float = 0.70
+    max_yaw_accel_rps2: float = 1.00
 
     def __post_init__(self) -> None:
         values = (
@@ -111,20 +111,26 @@ class NavigationConfig:
     goal_tolerance_m: float = 0.35
     slowdown_radius_m: float = 0.90
     turn_in_place_bearing_rad: float = 0.60
+    turning_forward_mps: float = 0.06
     minimum_forward_mps: float = 0.04
+    forward_gain: float = 0.40
     bearing_gain: float = 1.20
     lateral_gain: float = 0.40
     startup_stand_s: float = 2.0
     fall_height_m: float = 0.60
     fall_tilt_rad: float = 0.80
-    collision_stop: bool = True
+    # A brief hand/body touch against the workbench must not permanently zero
+    # the locomotion command. Falling is still handled as an emergency stop.
+    collision_stop: bool = False
 
     def __post_init__(self) -> None:
         positive_values = (
             self.goal_tolerance_m,
             self.slowdown_radius_m,
             self.turn_in_place_bearing_rad,
+            self.turning_forward_mps,
             self.minimum_forward_mps,
+            self.forward_gain,
             self.bearing_gain,
             self.lateral_gain,
             self.startup_stand_s,
@@ -152,16 +158,15 @@ class VisualAvoidanceConfig:
     minimum_green_red_gap: int = 18
     minimum_blue_red_gap: int = 8
     minimum_green_blue_gap: int = -15
-    slow_risk_fraction: float = 0.008
-    blocked_risk_fraction: float = 0.04
-    hard_stop_risk_fraction: float = 0.12
-    clear_risk_fraction: float = 0.003
-    avoidance_hold_steps: int = 60
+    # Start turning only when green occupies a substantial part of the center
+    # view; stop turning after it falls below the lower hysteresis threshold.
+    slow_risk_fraction: float = 0.10
+    blocked_risk_fraction: float = 0.20
+    hard_stop_risk_fraction: float = 0.40
+    clear_risk_fraction: float = 0.08
     clear_side_margin: float = 0.005
-    crawl_forward_mps: float = 0.03
-    approach_forward_mps: float = 0.08
-    avoidance_lateral_mps: float = 0.08
-    avoidance_yaw_rate_rps: float = 0.28
+    turn_forward_mps: float = 0.08
+    avoidance_yaw_rate_rps: float = 0.50
 
     def __post_init__(self) -> None:
         if not 0.0 < self.roi_bottom_fraction <= 1.0:
@@ -189,20 +194,14 @@ class VisualAvoidanceConfig:
             < self.hard_stop_risk_fraction
         ):
             raise ValueError("risk thresholds must be strictly increasing")
-        if self.avoidance_hold_steps <= 0:
-            raise ValueError("avoidance_hold_steps must be positive")
         if self.clear_side_margin < 0.0:
             raise ValueError("clear_side_margin must be non-negative")
         velocities = (
-            self.crawl_forward_mps,
-            self.approach_forward_mps,
-            self.avoidance_lateral_mps,
+            self.turn_forward_mps,
             self.avoidance_yaw_rate_rps,
         )
         if min(velocities) <= 0.0:
             raise ValueError("avoidance velocities must be positive")
-        if self.crawl_forward_mps > self.approach_forward_mps:
-            raise ValueError("crawl_forward_mps must not exceed approach_forward_mps")
 
 
 @dataclass(frozen=True)
@@ -212,7 +211,7 @@ class SceneConfig:
     environment_asset_path: str | None = None
     environment_actor_name: str | None = None
     robot_asset_path: str = "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda"
-    robot_actor_name: str = "g1_pick_usda"
+    robot_actor_name: str = "g1_green_table_demo"
 
 
 @dataclass(frozen=True)

@@ -29,12 +29,7 @@ def world_goal_in_body_frame(
 
 
 class PointGoalNavigator:
-    """Turn toward a goal, then approach it with a conservative forward speed.
-
-    This baseline intentionally ignores RGB pixels. It proves the point-goal and
-    high-level-to-low-level command loop before a learned visual policy replaces
-    it through the same ``VisualNavigator`` contract.
-    """
+    """Recompute a body-forward command from the current pose and target."""
 
     def __init__(
         self,
@@ -63,33 +58,53 @@ class PointGoalNavigator:
             )
         )
         if abs(bearing) >= self.navigation.turn_in_place_bearing_rad:
+            heading_fraction = float(
+                np.clip(
+                    (np.pi - abs(bearing))
+                    / (np.pi - self.navigation.turn_in_place_bearing_rad),
+                    0.0,
+                    1.0,
+                )
+            )
+            turning_forward = self.navigation.minimum_forward_mps + heading_fraction * (
+                self.navigation.turning_forward_mps
+                - self.navigation.minimum_forward_mps
+            )
             return VelocityCommand(
+                forward_mps=min(turning_forward, self.limits.max_forward_mps),
                 yaw_rate_rps=yaw_rate,
                 walk_enabled=True,
             )
 
-        slowdown_span = self.navigation.slowdown_radius_m - self.navigation.goal_tolerance_m
-        speed_fraction = float(
+        x_forward = max(0.0, float(observation.goal_xy_robot_m[0]))
+        forward = float(
             np.clip(
-                (distance - self.navigation.goal_tolerance_m) / slowdown_span,
-                0.0,
-                1.0,
+                self.navigation.forward_gain * x_forward,
+                self.navigation.minimum_forward_mps,
+                self.limits.max_forward_mps,
             )
         )
-        forward = self.navigation.minimum_forward_mps + speed_fraction * (
-            self.limits.max_forward_mps - self.navigation.minimum_forward_mps
-        )
+        if distance < self.navigation.slowdown_radius_m:
+            slowdown_span = (
+                self.navigation.slowdown_radius_m
+                - self.navigation.goal_tolerance_m
+            )
+            speed_fraction = float(
+                np.clip(
+                    (distance - self.navigation.goal_tolerance_m) / slowdown_span,
+                    0.0,
+                    1.0,
+                )
+            )
+            forward = self.navigation.minimum_forward_mps + speed_fraction * (
+                forward - self.navigation.minimum_forward_mps
+            )
         forward *= max(0.0, float(np.cos(bearing)))
-        lateral = float(
-            np.clip(
-                self.navigation.lateral_gain * observation.goal_xy_robot_m[1],
-                -self.limits.max_lateral_mps,
-                self.limits.max_lateral_mps,
-            )
-        )
         return VelocityCommand(
             forward_mps=float(forward),
-            lateral_mps=lateral,
+            # As in demo-01, path following uses forward+yaw. Lateral motion is
+            # reserved for the temporary visual clearance correction.
+            lateral_mps=0.0,
             yaw_rate_rps=yaw_rate,
             walk_enabled=True,
         )

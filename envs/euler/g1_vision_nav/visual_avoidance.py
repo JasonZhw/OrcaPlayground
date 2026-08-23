@@ -56,7 +56,10 @@ class GreenWorkbenchDetector:
         left = self._fraction(mask[:, :one_third])
         center = self._fraction(mask[:, one_third:two_thirds])
         right = self._fraction(mask[:, two_thirds:])
-        risk = self._fraction(mask)
+        # Match demo-01: only green in the center third blocks the current
+        # route. Once the table moves to an outer third, target tracking must
+        # regain control even though the table is still visible at the side.
+        risk = center
         return VisualRiskEstimate(
             risk_fraction=risk,
             left_fraction=left,
@@ -95,12 +98,17 @@ class VisualAvoidanceNavigator:
         self.intervention_count = 0
         self.maximum_risk_fraction = 0.0
         self._avoidance_side = 0
-        self._clear_steps = 0
+        self._avoidance_active = False
+        self.latest_mode = "waiting_rgb"
 
     @property
     def avoidance_side(self) -> int:
         """Current steering side: +1 is image/body left and -1 is right."""
         return self._avoidance_side
+
+    @property
+    def avoidance_active(self) -> bool:
+        return self._avoidance_active
 
     def reset(self) -> None:
         self.goal_navigator.reset()
@@ -109,7 +117,8 @@ class VisualAvoidanceNavigator:
         self.intervention_count = 0
         self.maximum_risk_fraction = 0.0
         self._avoidance_side = 0
-        self._clear_steps = 0
+        self._avoidance_active = False
+        self.latest_mode = "waiting_rgb"
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Follow the goal on clear ground and steer toward the clearer image side."""
@@ -121,53 +130,39 @@ class VisualAvoidanceNavigator:
 
         if not base.walk_enabled:
             self._avoidance_side = 0
-            self._clear_steps = 0
+            self._avoidance_active = False
+            self.latest_mode = "goal_stop"
             return base
 
-        if risk.obstacle_visible:
-            if self._avoidance_side == 0:
-                self._avoidance_side = self._choose_clear_side(risk, observation.goal_bearing_rad)
-            self._clear_steps = 0
-        elif self._avoidance_side != 0:
+        if self._avoidance_active:
             if risk.risk_fraction <= self.visual.clear_risk_fraction:
-                self._clear_steps += 1
-                if self._clear_steps >= self.visual.avoidance_hold_steps:
-                    self._avoidance_side = 0
-                    self._clear_steps = 0
-            else:
-                self._clear_steps = 0
-
-        if self._avoidance_side == 0:
+                self._avoidance_active = False
+                self._avoidance_side = 0
+                self.latest_mode = "follow_target"
+                return base
+        elif risk.obstacle_visible:
+            self._avoidance_side = self._choose_clear_side(
+                risk,
+                observation.goal_bearing_rad,
+            )
+            self._avoidance_active = True
+        else:
+            self.latest_mode = "follow_target"
             return base
 
+        # The frozen locomotion policy cannot rotate reliably at vx=0. Keep a
+        # small forward gait while turning until the center view is clear.
+        self.latest_mode = "turn_clear"
         self.intervention_count += 1
-        severity = float(
-            np.clip(
-                (risk.risk_fraction - self.visual.slow_risk_fraction)
-                / (self.visual.blocked_risk_fraction - self.visual.slow_risk_fraction),
-                0.0,
-                1.0,
-            )
-        )
-        if risk.obstacle_visible:
-            forward_limit = self.visual.approach_forward_mps + severity * (
-                self.visual.crawl_forward_mps - self.visual.approach_forward_mps
-            )
-            forward = min(max(0.0, base.forward_mps), forward_limit)
-            if risk.hard_stop:
-                forward = 0.0
-            lateral_scale = 0.70 + 0.30 * severity
-            yaw_scale = 0.60 + 0.40 * severity
-        else:
-            # The workbench has just left the image. Continue diagonally past
-            # its edge instead of immediately turning back toward the goal.
-            forward = self.visual.approach_forward_mps
-            lateral_scale = 1.0
-            yaw_scale = 0.0
         return VelocityCommand(
-            forward_mps=float(forward),
-            lateral_mps=float(self._avoidance_side * self.visual.avoidance_lateral_mps * lateral_scale),
-            yaw_rate_rps=float(self._avoidance_side * self.visual.avoidance_yaw_rate_rps * yaw_scale),
+            forward_mps=min(
+                self.visual.turn_forward_mps,
+                self.limits.max_forward_mps,
+            ),
+            lateral_mps=0.0,
+            yaw_rate_rps=float(
+                self._avoidance_side * self.visual.avoidance_yaw_rate_rps
+            ),
             walk_enabled=True,
         )
 

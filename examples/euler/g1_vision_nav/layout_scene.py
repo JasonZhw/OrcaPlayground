@@ -92,9 +92,18 @@ def publish_layout_with_g1(
     g1_asset_path: str,
     g1_position_xyz: tuple[float, float, float],
     g1_rotation_wxyz: tuple[float, float, float, float],
+    include_layout_actors: bool = False,
 ) -> int:
-    """Clear the runtime scene, then publish every layout actor plus one G1."""
-    layout_specs = load_layout_actor_specs(layout_path)
+    """Keep a running manual Layout and publish one code-generated G1.
+
+    ``include_layout_actors`` exists only for simple, flat layouts.  OrcaLab
+    v3 editor layouts commonly contain nested GroupActor entries and should be
+    opened manually before this function publishes G1.
+    """
+    path = Path(layout_path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    layout_specs = load_layout_actor_specs(path) if include_layout_actors else []
     if g1_actor_name in {spec.name for spec in layout_specs}:
         raise ValueError(f"G1 actor name collides with a layout actor: {g1_actor_name!r}")
 

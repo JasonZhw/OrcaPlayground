@@ -12,23 +12,38 @@ from layout_scene import publish_layout_with_g1
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LAYOUT_PATH = PROJECT_ROOT.parent / "demo1_v1.json"
-DEFAULT_SAMPLE_PATH = Path("/tmp/g1_visual_avoidance_rgb.png")
-DEFAULT_SPAWN_XYZ = (-18.5, -13.5, 0.0)
-DEFAULT_GOAL_XY = (-22.0, -15.7)
+DEFAULT_SAMPLE_PATH = Path("/tmp/g1_green_table_goal_rgb.png")
+DEFAULT_SPAWN_XYZ = (4.7, -8.0, 0.0)
+GREEN_TABLE_XY = (4.7, -5.0)
+DEFAULT_GOAL_XY = (4.7, 0.0)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="G1 RGB 视觉避障：绕过绿色工作台并到达点目标")
+    parser = argparse.ArgumentParser(
+        description="demo1_v1：G1 从绿色桌子南侧出发，视觉绕行后到达北侧点目标"
+    )
     parser.add_argument("--addr", default="127.0.0.1:50051", help="OrcaLab gRPC 地址")
     parser.add_argument("--layout", type=Path, default=DEFAULT_LAYOUT_PATH)
     parser.add_argument("--spawn-x", type=float, default=DEFAULT_SPAWN_XYZ[0])
     parser.add_argument("--spawn-y", type=float, default=DEFAULT_SPAWN_XYZ[1])
     parser.add_argument("--spawn-z", type=float, default=DEFAULT_SPAWN_XYZ[2])
-    parser.add_argument("--spawn-yaw", type=float, default=0.0)
+    parser.add_argument("--spawn-yaw", type=float, default=90.0)
     parser.add_argument("--goal-x", type=float, default=DEFAULT_GOAL_XY[0])
     parser.add_argument("--goal-y", type=float, default=DEFAULT_GOAL_XY[1])
-    parser.add_argument("--num-steps", type=int, default=3000, help="50 Hz 控制步数")
+    parser.add_argument("--num-steps", type=int, default=4000, help="50 Hz 控制步数")
     parser.add_argument("--output", type=Path, default=DEFAULT_SAMPLE_PATH)
+    parser.add_argument(
+        "--camera-window",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="显示 camera_head 的浏览器第一视角窗口（默认开启）",
+    )
+    parser.add_argument(
+        "--camera-window-port",
+        type=int,
+        default=8765,
+        help="第一视角浏览器窗口的本地端口（默认 8765）",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +84,8 @@ def main() -> None:
     args = parse_args()
     if args.num_steps <= 0:
         raise ValueError("--num-steps must be positive")
+    if not 0 <= args.camera_window_port <= 65535:
+        raise ValueError("--camera-window-port must be in [0, 65535]")
     goal_xy = (float(args.goal_x), float(args.goal_y))
     (
         config,
@@ -85,11 +102,24 @@ def main() -> None:
         visual=config.visual_avoidance,
     )
 
-    print("[WARNING] 即将清空 OrcaLab 当前运行场景，并从 Layout JSON 重新生成。")
+    print("[INFO] 保留 OrcaLab 当前运行的 demo1_v1 Layout，只发布代码生成的 G1。")
     print(f"[INFO] Layout: {args.layout.expanduser().resolve()}")
     print(f"[INFO] G1: {config.scene.robot_asset_path}")
-    print(f"[INFO] Goal: ({goal_xy[0]:.3f}, {goal_xy[1]:.3f})")
-    print("[INFO] Perception: camera_head RGB 7072 / green-workbench baseline")
+    print(
+        f"[INFO] Spawn: ({args.spawn_x:.2f}, {args.spawn_y:.2f}, {args.spawn_z:.2f}), "
+        f"yaw={args.spawn_yaw:.1f}deg"
+    )
+    print(f"[INFO] Green table: ({GREEN_TABLE_XY[0]:.2f}, {GREEN_TABLE_XY[1]:.2f})")
+    print(f"[INFO] Opposite-side goal: ({goal_xy[0]:.3f}, {goal_xy[1]:.3f})")
+    print("[INFO] Perception: camera_head RGB 7072 / green-table detector")
+    print(
+        "[INFO] First-person window: "
+        + (
+            f"ON (browser, http://127.0.0.1:{args.camera_window_port})"
+            if args.camera_window
+            else "OFF"
+        )
+    )
     print(
         f"[INFO] Runtime window: {args.num_steps} control steps ~= {args.num_steps / config.timing.locomotion_hz:.1f}s"
     )
@@ -101,8 +131,9 @@ def main() -> None:
         g1_asset_path=config.scene.robot_asset_path,
         g1_position_xyz=(args.spawn_x, args.spawn_y, args.spawn_z),
         g1_rotation_wxyz=_yaw_quaternion_wxyz(args.spawn_yaw),
+        include_layout_actors=False,
     )
-    print(f"[INFO] 已发布 {actor_count} 个 Layout 物体 + G1；等待服务重启……")
+    print(f"[INFO] 已发布 G1（脚本重建 Layout actor 数={actor_count}）；等待服务重启……")
     time.sleep(3.0)
 
     env = environment_class(
@@ -118,8 +149,10 @@ def main() -> None:
         navigation_config=config.navigation,
         navigator=navigator,
         sample_path=args.output.expanduser().resolve(),
+        show_camera_window=args.camera_window,
+        camera_window_port=args.camera_window_port,
     )
-    verifier = verifier_class("Demo 1: G1 RGB 视觉避障验证")
+    verifier = verifier_class("Demo 1 v1: G1 绿色桌子定点导航与视觉避障")
     try:
         report = env.run_lesson(num_steps=args.num_steps, verifier=verifier)
     finally:

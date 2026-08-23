@@ -33,6 +33,7 @@ def _observation(goal_xy_robot_m: tuple[float, float]) -> NavigationObservation:
 def _observation_with_rgb(
     goal_xy_robot_m: tuple[float, float],
     rgb: np.ndarray,
+    frame_index: int = 1,
 ) -> NavigationObservation:
     observation = _observation(goal_xy_robot_m)
     return NavigationObservation(
@@ -41,7 +42,7 @@ def _observation_with_rgb(
         base_velocity_xy_mps=observation.base_velocity_xy_mps,
         base_yaw_rate_rps=observation.base_yaw_rate_rps,
         previous_command=observation.previous_command,
-        frame_index=1,
+        frame_index=frame_index,
         sim_time_s=0.1,
     )
 
@@ -64,10 +65,10 @@ def test_point_goal_navigator_stops_inside_tolerance() -> None:
     assert command == VelocityCommand.stopped()
 
 
-def test_point_goal_navigator_turns_in_place_for_side_goal() -> None:
+def test_point_goal_navigator_uses_safe_forward_arc_for_side_goal() -> None:
     command = PointGoalNavigator().act(_observation((0.0, 1.0)))
     assert command.walk_enabled
-    assert command.forward_mps == 0.0
+    assert 0.0 < command.forward_mps <= PointGoalNavigator().navigation.turning_forward_mps
     assert command.yaw_rate_rps > 0.0
 
 
@@ -75,7 +76,7 @@ def test_point_goal_navigator_uses_slow_arc_for_moderate_bearing() -> None:
     command = PointGoalNavigator().act(_observation((1.0, 0.5)))
     assert command.walk_enabled
     assert command.forward_mps > 0.0
-    assert 0.0 < command.lateral_mps <= PointGoalNavigator().limits.max_lateral_mps
+    assert command.lateral_mps == 0.0
     assert command.yaw_rate_rps > 0.0
 
 
@@ -103,6 +104,16 @@ def test_green_workbench_detector_reports_image_regions() -> None:
     assert risk.center_fraction > 0.0
 
 
+def test_green_workbench_at_image_edge_does_not_block_route() -> None:
+    rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
+    rgb[:36, :25, :] = np.asarray([70, 145, 130], dtype=np.uint8)
+    risk = GreenWorkbenchDetector().estimate(rgb)
+    assert risk.left_fraction > 0.0
+    assert risk.center_fraction == 0.0
+    assert risk.risk_fraction == 0.0
+    assert not risk.obstacle_visible
+
+
 def test_visual_avoidance_matches_point_goal_on_clear_rgb() -> None:
     observation = _observation((2.0, 0.0))
     baseline = PointGoalNavigator().act(observation)
@@ -116,20 +127,40 @@ def test_visual_avoidance_slows_and_steers_to_clear_side() -> None:
     navigator = VisualAvoidanceNavigator()
     command = navigator.act(_observation_with_rgb((2.0, 0.0), rgb))
     assert command.walk_enabled
-    assert 0.0 <= command.forward_mps < navigator.limits.max_forward_mps
-    assert command.lateral_mps > 0.0
+    assert command.forward_mps == navigator.visual.turn_forward_mps
+    assert command.lateral_mps == 0.0
     assert command.yaw_rate_rps > 0.0
+    assert navigator.latest_mode == "turn_clear"
     assert navigator.intervention_count == 1
 
 
-def test_visual_avoidance_holds_clearance_after_obstacle_leaves_view() -> None:
+def test_visual_avoidance_immediately_returns_to_current_pose_target_when_clear() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     obstacle_rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
+    clear_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     navigator = VisualAvoidanceNavigator()
-    navigator.act(_observation_with_rgb((2.0, 0.0), obstacle_rgb))
+    navigator.act(_observation_with_rgb((2.0, 0.0), obstacle_rgb, frame_index=1))
 
-    command = navigator.act(_observation((0.0, -2.0)))
-    assert navigator.avoidance_side == 1
-    assert command.forward_mps == navigator.visual.approach_forward_mps
-    assert command.lateral_mps > 0.0
-    assert command.yaw_rate_rps == 0.0
+    command = navigator.act(
+        _observation_with_rgb((0.0, -2.0), clear_rgb, frame_index=2)
+    )
+
+    assert command == navigator.latest_base_command
+    assert command.yaw_rate_rps < 0.0
+    assert navigator.avoidance_side == 0
+    assert navigator.latest_mode == "follow_target"
+
+
+def test_visual_avoidance_recomputes_pose_goal_command_below_block_threshold() -> None:
+    obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
+    obstacle_rgb[20:21, 30:50, :] = np.asarray([70, 145, 130], dtype=np.uint8)
+    navigator = VisualAvoidanceNavigator()
+
+    first_command = navigator.act(_observation_with_rgb((2.0, 0.0), obstacle_rgb))
+    first_base = navigator.latest_base_command
+    second_command = navigator.act(_observation_with_rgb((2.0, -0.5), obstacle_rgb))
+    second_base = navigator.latest_base_command
+
+    assert first_base.yaw_rate_rps == 0.0
+    assert second_base.yaw_rate_rps < 0.0
+    assert second_command.yaw_rate_rps < first_command.yaw_rate_rps

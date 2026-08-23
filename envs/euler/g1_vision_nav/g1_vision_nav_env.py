@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from envs.euler.g1_vision_nav.camera_stream import CameraFrame
 from envs.euler.g1_vision_nav.command_bridge import (
     CommandLimiter,
     apply_velocity_command,
@@ -166,8 +167,12 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             f"导航安全状态（step={step}）",
         )
         command = self.command_limiter.previous
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
+        error_world = self.goal_xy_world - position[:2]
         verifier.observe(
             f"navigation_state_{step}",
+            f"position=({position[0]:.3f}, {position[1]:.3f}), "
+            f"error_world=({error_world[0]:+.3f}, {error_world[1]:+.3f}), "
             f"distance={distance:.3f}m, bearing={state['goal_bearing_rad']:.3f}rad, "
             f"command=({command.forward_mps:.3f}, {command.lateral_mps:.3f}, "
             f"{command.yaw_rate_rps:.3f})",
@@ -255,6 +260,24 @@ class G1VisionNavEnv(G1CameraValidationEnv):
             frame_index=frame_index,
             sim_time_s=float(self.data.time),
         )
+
+    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
+        lines = super()._camera_preview_lines(frame)
+        observation = self._latest_navigation_observation
+        command = self.command_limiter.previous
+        state = self._read_planar_state()
+        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
+        distance = "waiting" if observation is None else f"{observation.goal_distance_m:.2f} m"
+        bearing = "waiting" if observation is None else f"{observation.goal_bearing_rad:+.2f} rad"
+        lines.extend(
+            (
+                f"Position: ({position[0]:.2f}, {position[1]:.2f})",
+                f"Goal: ({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f}) | distance={distance}",
+                f"Bearing: {bearing}",
+                f"Command: vx={command.forward_mps:.2f} vy={command.lateral_mps:.2f} yaw={command.yaw_rate_rps:.2f}",
+            )
+        )
+        return lines
 
     def _read_planar_state(self) -> dict[str, np.ndarray | float]:
         pelvis_name = f"{self.agent_name}_pelvis"
