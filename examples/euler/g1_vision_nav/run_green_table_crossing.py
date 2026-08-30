@@ -1,4 +1,10 @@
-"""Run RGB-driven workbench avoidance with frozen G1 locomotion."""
+"""Demo 1: cross a green table obstacle with RGB-guided G1 navigation.
+
+Pipeline:
+    open Layout -> AddActor(g1_navi) -> activate camera_head:7072
+    -> point-goal command -> green-table avoidance correction
+    -> frozen locomotion ONNX -> mixed-actuator G1 control
+"""
 
 from __future__ import annotations
 
@@ -7,8 +13,6 @@ import math
 import sys
 import time
 from pathlib import Path
-
-from layout_scene import publish_layout_with_g1
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LAYOUT_PATH = PROJECT_ROOT.parent / "demo1_v1.json"
@@ -35,8 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--camera-window",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="显示 camera_head 的浏览器第一视角窗口（默认开启）",
+        default=False,
+        help="显示 camera_head 的浏览器第一视角窗口（默认关闭）",
     )
     parser.add_argument(
         "--camera-window-port",
@@ -63,24 +67,30 @@ def _load_components():
         sys.path.insert(0, lesson_dir_string)
 
     from g1_base_env import G1_FRAME_SKIP, G1_MODEL_XML, G1_TIME_STEP
+    from layout_scene import publish_layout_with_g1
     from online_verifier import OnlineVerifier
 
     from envs.euler.g1_vision_nav.config import DEFAULT_CONFIG
-    from envs.euler.g1_vision_nav.g1_visual_avoidance_env import G1VisualAvoidanceEnv
-    from envs.euler.g1_vision_nav.visual_avoidance import VisualAvoidanceNavigator
+    from envs.euler.g1_vision_nav.g1_green_table_env import G1GreenTableEnv
+    from envs.euler.g1_vision_nav.green_table_navigator import GreenTableNavigator
 
     return (
         DEFAULT_CONFIG,
-        G1VisualAvoidanceEnv,
-        VisualAvoidanceNavigator,
+        G1GreenTableEnv,
+        GreenTableNavigator,
         G1_FRAME_SKIP,
         G1_MODEL_XML,
         G1_TIME_STEP,
         OnlineVerifier,
+        publish_layout_with_g1,
     )
 
 
 def main() -> None:
+    # ------------------------------------------------------------------
+    # 1. 固定演示条件：起点在桌子南侧，目标点在桌子北侧。直线路径会
+    #    穿过绿色桌子，因此只有 RGB 真正介入才能完成任务。
+    # ------------------------------------------------------------------
     args = parse_args()
     if args.num_steps <= 0:
         raise ValueError("--num-steps must be positive")
@@ -95,6 +105,7 @@ def main() -> None:
         model_xml,
         time_step,
         verifier_class,
+        publish_scene,
     ) = _load_components()
     navigator = navigator_class(
         navigation=config.navigation,
@@ -124,7 +135,12 @@ def main() -> None:
         f"[INFO] Runtime window: {args.num_steps} control steps ~= {args.num_steps / config.timing.locomotion_hz:.1f}s"
     )
 
-    actor_count = publish_layout_with_g1(
+    # ------------------------------------------------------------------
+    # 2. 只通过 AddActor 发布 G1。官方 Lesson 8 说明：AddActor 会把
+    #    CameraCaptureComponent 注册到 Studio，随后才能激活 7072 RGB。
+    #    手动打开的 demo1_v1 环境不会被重新发布。
+    # ------------------------------------------------------------------
+    actor_count = publish_scene(
         grpc_addr=args.addr,
         layout_path=args.layout,
         g1_actor_name=config.scene.robot_actor_name,
@@ -136,6 +152,10 @@ def main() -> None:
     print(f"[INFO] 已发布 G1（脚本重建 Layout actor 数={actor_count}）；等待服务重启……")
     time.sleep(3.0)
 
+    # ------------------------------------------------------------------
+    # 3. 进入闭环：50 Hz 运控每步执行，RGB/位姿生成上层速度指令，
+    #    最后由冻结的 ONNX 策略转换为 G1 的关节控制。
+    # ------------------------------------------------------------------
     env = environment_class(
         frame_skip=frame_skip,
         orcagym_addr=args.addr,

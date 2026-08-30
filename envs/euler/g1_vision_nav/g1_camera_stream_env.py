@@ -1,4 +1,4 @@
-"""Online RGB-camera validation while ``g1_pick_usda`` stands safely."""
+"""Camera-stream lifecycle shared by the online G1 navigation task."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from envs.euler.g1_vision_nav.config import CameraConfig
 from envs.euler.g1_vision_nav.g1_pick_locomotion_env import G1PickLocomotionEnv
 
 
-class G1CameraValidationEnv(G1PickLocomotionEnv):
-    """Validate the head RGB stream without asking G1 to walk."""
+class G1CameraStreamEnv(G1PickLocomotionEnv):
+    """Activate, consume, verify, preview, and close the head RGB stream."""
 
     FRAME_CHECK_INTERVAL = 25
-    VIDEO_DIR = Path("/tmp/g1_camera_validation_video")
+    VIDEO_DIR = Path("/tmp/g1_green_table_video")
 
     def __init__(
         self,
@@ -49,6 +49,9 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
 
     def before_loop(self, verifier) -> None:
         """Activate Studio RGB capture before the first render cycle."""
+        # Camera Component is owned by Studio rather than MuJoCo (ncam may be
+        # zero). AddActor registration lets these gRPC calls activate the
+        # component and start its WebSocket RGB output on port 7072.
         camera_count = int(self.model.model_info.get("ncam", 0))
         verifier.observe(
             "camera_backend",

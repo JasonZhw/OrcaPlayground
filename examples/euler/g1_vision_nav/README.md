@@ -23,31 +23,32 @@ G1 出生点: (4.7, -8.0, 0.0)
 ## 运行
 
 1. 在 OrcaLab 中打开 `/home/jason77/SY/demo1_v1.json`。
-2. 点击运行，确认绿色桌子位于约 `(4.7, -5.0)`。
+2. 点击运行并选择 `No simulation program (manual launch)`，确认绿色桌子位于约 `(4.7, -5.0)`。
 3. 在终端执行：
 
 ```bash
 cd /home/jason77/SY/OrcaPlayground
 conda activate orca
 
-python examples/euler/g1_vision_nav/run_visual_avoidance.py
+python examples/euler/g1_vision_nav/run_green_table_crossing.py
 ```
 
-脚本保留手动打开的 Layout，只发布 actor `g1_green_table_demo`。默认会在浏览器
-打开 `http://127.0.0.1:8765`，显示实时 RGB、目标距离、指令和绿色区域占比。
-关闭或刷新网页不会停止导航；若浏览器没有自动打开，可以手动访问终端打印的地址。
+脚本保留手动打开的 Layout，只发布 actor `g1_navi`。导航算法仍读取
+`camera_head:7072` RGB，但默认不打开浏览器；第一视角直接在 OrcaLab 中观察。
+需要调试像素输入时，可用 `--camera-window` 打开浏览器预览。
 
 常用参数：
 
 ```bash
-# 不启动浏览器预览
-python examples/euler/g1_vision_nav/run_visual_avoidance.py --no-camera-window
+# 临时启动浏览器预览
+python examples/euler/g1_vision_nav/run_green_table_crossing.py --camera-window
 
-# 使用另一个本地预览端口
-python examples/euler/g1_vision_nav/run_visual_avoidance.py --camera-window-port 8877
+# 启动浏览器并使用另一个本地预览端口
+python examples/euler/g1_vision_nav/run_green_table_crossing.py \
+  --camera-window --camera-window-port 8877
 
 # 临时覆盖出生点、目标或运行时间
-python examples/euler/g1_vision_nav/run_visual_avoidance.py \
+python examples/euler/g1_vision_nav/run_green_table_crossing.py \
   --spawn-x 4.7 --spawn-y -8.0 --spawn-yaw 90 \
   --goal-x 4.7 --goal-y -2.5 --num-steps 4000
 ```
@@ -72,3 +73,27 @@ camera_head RGB → 中央绿色达到 10% 时保持 0.08m/s 小步旋转（yaw=
 
 绿色检测只是当前固定 Layout 的可解释基线，不代表通用障碍检测，也不能从单目
 RGB 得到真实米制距离。
+
+## 核心代码导读
+
+```text
+run_green_table_crossing.py   唯一演示入口；固定起点、目标并组装整条链路
+layout_scene.py               通过 AddActor 发布 g1_navi，注册 Studio 相机组件
+g1_camera_stream_env.py       激活 camera_head 并读取 7072 RGB
+point_goal_navigator.py       根据实时位置和朝向重算点目标速度指令
+green_table_navigator.py      检测绿色桌面并临时修正点目标指令
+g1_vision_nav_env.py          连接上层导航与冻结的 G1 ONNX 运控模型
+g1_green_table_env.py         汇总本演示的在线验证指标和第一视角信息
+```
+
+入口名称使用“green table crossing”，因为本分支并不是通用视觉避障系统，而是
+一个条件明确、可重复录制的绿色桌子穿越演示。
+
+本次只调整职责命名，没有改变已经在线验证过的控制参数：
+
+```text
+run_visual_avoidance.py      -> run_green_table_crossing.py
+visual_avoidance.py          -> green_table_navigator.py
+g1_visual_avoidance_env.py   -> g1_green_table_env.py
+g1_camera_validation_env.py  -> g1_camera_stream_env.py
+```

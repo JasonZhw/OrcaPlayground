@@ -9,7 +9,7 @@ environment:
 
 robot:
   asset_path: assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
-  actor_name: g1_green_table_demo
+  actor_name: g1_navi
   spawn_position_xyz: [4.7, -8.0, 0.0]
   spawn_rotation_wxyz: [0.707107, 0.0, 0.0, 0.707107]
   exported_camera_count: 0
@@ -27,8 +27,8 @@ navigation:
   goal_tolerance_m: 0.35
   episode_timeout_s: 80.0
   collision_geom_names: []
-  point_goal_status: pending_online_validation
-  visual_avoidance_status: pending_online_validation
+  point_goal_status: validated_online
+  visual_avoidance_status: validated_online
   visual_avoidance_scope: industrial_workbench_1_green_pixels
   command_rates_hz:
     physics: 1000
@@ -38,5 +38,6 @@ navigation:
     forward_mps: 0.15
     lateral_mps: 0.08
     yaw_rate_rps: 0.50
-  camera_window: browser_mjpeg
+  camera_window: orcalab_studio_viewport
+  optional_debug_window: browser_mjpeg
   default_run_steps: 4000

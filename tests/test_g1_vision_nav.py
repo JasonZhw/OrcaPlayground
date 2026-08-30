@@ -12,9 +12,9 @@ from envs.euler.g1_vision_nav.point_goal_navigator import (
     PointGoalNavigator,
     world_goal_in_body_frame,
 )
-from envs.euler.g1_vision_nav.visual_avoidance import (
-    GreenWorkbenchDetector,
-    VisualAvoidanceNavigator,
+from envs.euler.g1_vision_nav.green_table_navigator import (
+    GreenTableDetector,
+    GreenTableNavigator,
 )
 
 
@@ -90,7 +90,7 @@ def test_point_goal_navigator_moves_slowly_toward_forward_goal() -> None:
 
 def test_green_workbench_detector_ignores_gray_floor() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    risk = GreenWorkbenchDetector().estimate(rgb)
+    risk = GreenTableDetector().estimate(rgb)
     assert risk.risk_fraction == 0.0
     assert not risk.obstacle_visible
 
@@ -98,7 +98,7 @@ def test_green_workbench_detector_ignores_gray_floor() -> None:
 def test_green_workbench_detector_reports_image_regions() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    risk = GreenWorkbenchDetector().estimate(rgb)
+    risk = GreenTableDetector().estimate(rgb)
     assert risk.obstacle_visible
     assert risk.right_fraction > risk.left_fraction
     assert risk.center_fraction > 0.0
@@ -107,24 +107,24 @@ def test_green_workbench_detector_reports_image_regions() -> None:
 def test_green_workbench_at_image_edge_does_not_block_route() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[:36, :25, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    risk = GreenWorkbenchDetector().estimate(rgb)
+    risk = GreenTableDetector().estimate(rgb)
     assert risk.left_fraction > 0.0
     assert risk.center_fraction == 0.0
     assert risk.risk_fraction == 0.0
     assert not risk.obstacle_visible
 
 
-def test_visual_avoidance_matches_point_goal_on_clear_rgb() -> None:
+def test_green_table_navigation_matches_point_goal_on_clear_rgb() -> None:
     observation = _observation((2.0, 0.0))
     baseline = PointGoalNavigator().act(observation)
-    visual = VisualAvoidanceNavigator().act(observation)
+    visual = GreenTableNavigator().act(observation)
     assert visual == baseline
 
 
-def test_visual_avoidance_slows_and_steers_to_clear_side() -> None:
+def test_green_table_navigation_slows_and_steers_to_clear_side() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = GreenTableNavigator()
     command = navigator.act(_observation_with_rgb((2.0, 0.0), rgb))
     assert command.walk_enabled
     assert command.forward_mps == navigator.visual.turn_forward_mps
@@ -134,11 +134,11 @@ def test_visual_avoidance_slows_and_steers_to_clear_side() -> None:
     assert navigator.intervention_count == 1
 
 
-def test_visual_avoidance_immediately_returns_to_current_pose_target_when_clear() -> None:
+def test_green_table_navigation_returns_to_current_pose_target_when_clear() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     obstacle_rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
     clear_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = GreenTableNavigator()
     navigator.act(_observation_with_rgb((2.0, 0.0), obstacle_rgb, frame_index=1))
 
     command = navigator.act(
@@ -151,10 +151,10 @@ def test_visual_avoidance_immediately_returns_to_current_pose_target_when_clear(
     assert navigator.latest_mode == "follow_target"
 
 
-def test_visual_avoidance_recomputes_pose_goal_command_below_block_threshold() -> None:
+def test_green_table_navigation_recomputes_pose_goal_command_below_threshold() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     obstacle_rgb[20:21, 30:50, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = GreenTableNavigator()
 
     first_command = navigator.act(_observation_with_rgb((2.0, 0.0), obstacle_rgb))
     first_base = navigator.latest_base_command

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from orca_gym.scene.orca_gym_scene import Actor, OrcaGymScene
 
 
 @dataclass(frozen=True)
@@ -100,6 +99,11 @@ def publish_layout_with_g1(
     v3 editor layouts commonly contain nested GroupActor entries and should be
     opened manually before this function publishes G1.
     """
+    # Importing OrcaGym initializes its runtime logger and gRPC stack. Keep the
+    # import inside the online-only function so parsing --help and CPU tests do
+    # not require a running Studio or writable OrcaGym log directory.
+    from orca_gym.scene.orca_gym_scene import Actor, OrcaGymScene
+
     path = Path(layout_path).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -107,6 +111,13 @@ def publish_layout_with_g1(
     if g1_actor_name in {spec.name for spec in layout_specs}:
         raise ValueError(f"G1 actor name collides with a layout actor: {g1_actor_name!r}")
 
+    # ------------------------------------------------------------------
+    # Scene publication block (same mechanism as official Euler Lesson 8)
+    # 1. The first empty publish clears only actors created by earlier scripts.
+    # 2. The manually opened Layout remains the static environment.
+    # 3. G1 is created through AddActor, registering its Camera Component so
+    #    camera_head can be activated over gRPC and streamed on port 7072.
+    # ------------------------------------------------------------------
     scene = OrcaGymScene(grpc_addr=grpc_addr)
     try:
         scene.publish_scene()

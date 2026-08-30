@@ -1,4 +1,4 @@
-"""RGB workbench perception and local avoidance for Demo 1."""
+"""Green-table RGB perception and local navigation policy for Demo 1."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from envs.euler.g1_vision_nav.point_goal_navigator import PointGoalNavigator
 
 
 @dataclass(frozen=True)
-class VisualRiskEstimate:
+class GreenTableRiskEstimate:
     """Green-workbench occupancy measured in the navigable camera region."""
 
     risk_fraction: float
@@ -28,14 +28,22 @@ class VisualRiskEstimate:
     hard_stop: bool
 
 
-class GreenWorkbenchDetector:
+class GreenTableDetector:
     """Detect current-layout green workbenches using only the 7072 RGB frame."""
 
     def __init__(self, config: VisualAvoidanceConfig | None = None) -> None:
         self.config = config or VisualAvoidanceConfig()
 
-    def estimate(self, rgb: np.ndarray) -> VisualRiskEstimate:
+    def estimate(self, rgb: np.ndarray) -> GreenTableRiskEstimate:
         """Return per-region workbench occupancy, excluding the arm-heavy bottom."""
+        # --------------------------------------------------------------
+        # Perception block
+        # 1. Crop the arm-heavy lower image.
+        # 2. Build a deterministic green/cyan mask in RGB space.
+        # 3. Measure occupancy in left, center, and right image thirds.
+        # Only center occupancy blocks the direct path; side occupancy is
+        # retained to decide which turning direction is clearer.
+        # --------------------------------------------------------------
         image = np.asarray(rgb)
         if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
             raise ValueError("rgb must be an HxWx3 uint8 array")
@@ -60,7 +68,7 @@ class GreenWorkbenchDetector:
         # route. Once the table moves to an outer third, target tracking must
         # regain control even though the table is still visible at the side.
         risk = center
-        return VisualRiskEstimate(
+        return GreenTableRiskEstimate(
             risk_fraction=risk,
             left_fraction=left,
             center_fraction=center,
@@ -75,7 +83,7 @@ class GreenWorkbenchDetector:
         return 0.0 if mask.size == 0 else float(np.count_nonzero(mask) / mask.size)
 
 
-class VisualAvoidanceNavigator:
+class GreenTableNavigator:
     """Wrap point-goal control with an RGB-driven workbench avoidance layer."""
 
     def __init__(
@@ -92,8 +100,8 @@ class VisualAvoidanceNavigator:
             navigation=self.navigation,
             limits=self.limits,
         )
-        self.detector = GreenWorkbenchDetector(self.visual)
-        self.latest_risk: VisualRiskEstimate | None = None
+        self.detector = GreenTableDetector(self.visual)
+        self.latest_risk: GreenTableRiskEstimate | None = None
         self.latest_base_command = VelocityCommand.stopped()
         self.intervention_count = 0
         self.maximum_risk_fraction = 0.0
@@ -122,6 +130,14 @@ class VisualAvoidanceNavigator:
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Follow the goal on clear ground and steer toward the clearer image side."""
+        # --------------------------------------------------------------
+        # Decision block
+        # - Clear center: use the pose-based command unchanged.
+        # - Green enters center: latch the clearer side and turn with a small
+        #   forward gait (the frozen policy turns poorly at exactly vx=0).
+        # - Center clears: immediately return control to point-goal tracking,
+        #   which recomputes the command from the robot's current pose.
+        # --------------------------------------------------------------
         base = self.goal_navigator.act(observation)
         risk = self.detector.estimate(observation.rgb)
         self.latest_base_command = base
@@ -166,7 +182,7 @@ class VisualAvoidanceNavigator:
             walk_enabled=True,
         )
 
-    def _choose_clear_side(self, risk: VisualRiskEstimate, goal_bearing_rad: float) -> int:
+    def _choose_clear_side(self, risk: GreenTableRiskEstimate, goal_bearing_rad: float) -> int:
         difference = risk.left_fraction - risk.right_fraction
         if abs(difference) >= self.visual.clear_side_margin:
             return 1 if difference < 0.0 else -1

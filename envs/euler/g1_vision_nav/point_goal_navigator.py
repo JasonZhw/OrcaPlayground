@@ -45,6 +45,13 @@ class PointGoalNavigator:
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Return a body-frame command for the current relative goal."""
+        # --------------------------------------------------------------
+        # Point-goal block
+        # The goal is transformed from world coordinates into the current
+        # robot frame before this method is called. Therefore the command is
+        # recalculated from the live G1 position and yaw on every navigation
+        # cycle; it is not a prerecorded vx/vy sequence.
+        # --------------------------------------------------------------
         distance = observation.goal_distance_m
         if distance <= self.navigation.goal_tolerance_m:
             return VelocityCommand.stopped()

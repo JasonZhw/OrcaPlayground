@@ -23,8 +23,8 @@ from envs.euler.g1_vision_nav.contracts import (
     VelocityCommand,
     VisualNavigator,
 )
-from envs.euler.g1_vision_nav.g1_camera_validation_env import (
-    G1CameraValidationEnv,
+from envs.euler.g1_vision_nav.g1_camera_stream_env import (
+    G1CameraStreamEnv,
 )
 from envs.euler.g1_vision_nav.point_goal_navigator import (
     PointGoalNavigator,
@@ -32,7 +32,7 @@ from envs.euler.g1_vision_nav.point_goal_navigator import (
 )
 
 
-class G1VisionNavEnv(G1CameraValidationEnv):
+class G1VisionNavEnv(G1CameraStreamEnv):
     """Drive G1 to a world-frame point while keeping the RGB pipeline active."""
 
     NAVIGATION_LOG_INTERVAL = 50
@@ -117,6 +117,10 @@ class G1VisionNavEnv(G1CameraValidationEnv):
 
     def compute_ctrl(self, step: int) -> np.ndarray:
         """Update the 10 Hz navigator, then run the frozen 50 Hz ONNX policy."""
+        # Hierarchical control boundary:
+        #   RGB + current pose -> navigation VelocityCommand
+        #   VelocityCommand -> frozen G1 locomotion observation
+        #   ONNX joint targets -> per-physics-step actuator control
         if step % self._navigation_stride == 0:
             requested = self._requested_command(step)
             command = self.command_limiter.apply(

@@ -1,16 +1,16 @@
-"""Online G1 environment that requires RGB to affect navigation commands."""
+"""Online G1 task environment for crossing the green table obstacle."""
 
 from __future__ import annotations
 
 from envs.euler.g1_vision_nav.camera_stream import CameraFrame
 from envs.euler.g1_vision_nav.g1_vision_nav_env import G1VisionNavEnv
-from envs.euler.g1_vision_nav.visual_avoidance import VisualAvoidanceNavigator
+from envs.euler.g1_vision_nav.green_table_navigator import GreenTableNavigator
 
 
-class G1VisualAvoidanceEnv(G1VisionNavEnv):
-    """Add visual-intervention telemetry to the point-goal navigation Env."""
+class G1GreenTableEnv(G1VisionNavEnv):
+    """Require green-table perception to intervene during point-goal navigation."""
 
-    def __init__(self, *args, navigator: VisualAvoidanceNavigator, **kwargs) -> None:
+    def __init__(self, *args, navigator: GreenTableNavigator, **kwargs) -> None:
         self.visual_navigator = navigator
         super().__init__(*args, navigator=navigator, **kwargs)
 
