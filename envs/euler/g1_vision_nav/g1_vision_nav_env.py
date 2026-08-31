@@ -24,8 +24,8 @@ from envs.euler.g1_vision_nav.contracts import (
     VelocityCommand,
     VisualNavigator,
 )
-from envs.euler.g1_vision_nav.g1_camera_validation_env import (
-    G1CameraValidationEnv,
+from envs.euler.g1_vision_nav.g1_camera_stream_env import (
+    G1CameraStreamEnv,
 )
 from envs.euler.g1_vision_nav.point_goal_navigator import (
     PointGoalNavigator,
@@ -38,7 +38,7 @@ from envs.euler.g1_vision_nav.safety_monitor import (
 from envs.euler.g1_vision_nav.waypoint_route import WaypointRoute
 
 
-class G1VisionNavEnv(G1CameraValidationEnv):
+class G1VisionNavEnv(G1CameraStreamEnv):
     """Drive G1 to a world-frame point while keeping the RGB pipeline active."""
 
     NAVIGATION_LOG_INTERVAL = 50
@@ -154,6 +154,10 @@ class G1VisionNavEnv(G1CameraValidationEnv):
 
     def compute_ctrl(self, step: int) -> np.ndarray:
         """Update the 10 Hz navigator, then run the frozen 50 Hz ONNX policy."""
+        # Hierarchical control boundary:
+        #   live pose + RGB -> 10 Hz navigation VelocityCommand
+        #   limited VelocityCommand -> frozen 50 Hz locomotion observation
+        #   ONNX joint targets -> mixed G1 actuator control at physics rate
         if step % self._navigation_stride == 0:
             requested = self._requested_command(step)
             command = self.command_limiter.apply(
@@ -440,6 +444,7 @@ class G1VisionNavEnv(G1CameraValidationEnv):
         return self.route.remaining_distance_m(position)
 
     def _should_save_rgb_sample(self) -> bool:
+        """The final camera frame is an inspection result, not a debug sample."""
         return self.route.completed
 
     def _has_fallen(self, state: dict[str, np.ndarray | float]) -> bool:

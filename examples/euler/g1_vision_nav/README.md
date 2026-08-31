@@ -1,245 +1,615 @@
-# G1 分层视觉导航 Demo
+# ORCA Lab 实训教案：从 Layout 搭建到 G1 视觉巡检
 
-> 面向学员与讲师的完整实训课程见 [BOOTCAMP.md](BOOTCAMP.md)。
+> 课程状态：绿色桌子最小闭环和工厂左线巡检已经完成在线验证；工厂右线作为后续扩展。
 
-2026-08-22 已按新的核心诉求清理旧开发改动，并重建为一条最小链路。后文保留的早期单目标结果仅作为历史回归记录；当前正式入口以本节为准。
+## 一、实训目标与两个阶段
 
-## 当前唯一主入口
+### 1.1 两阶段任务
 
-```text
-左/右世界坐标路径点
-→ 根据实时位姿计算机器人坐标系 vx 和目标 yaw（正常路径 vy=0）
-→ camera_head RGB 检测深色、绿色、黄色区域
-→ 障碍转向连续叠加到路径 yaw，锁定较空一侧，清空后平滑回归
-→ 冻结 G1 locomotion ONNX
-→ 到达柜前 (19.2, 4.3) 后保存一张 RGB PNG
-```
+本实训不会一开始就把 G1 放进复杂工厂并要求它完成全部巡检，而是通过两个由简到繁的
+场景逐步验证系统能力：
 
-固定路线（2026-08-23 waypoint 修订版）：
+1. **绿色桌子最小验证**：先验证 G1 运控、实时定位、RGB 取流、颜色检测、局部绕障和
+   避障后的目标重跟随；
+2. **工厂电气柜巡检**：在最小闭环成立后，再加入多个 waypoint、复杂环境和柜前拍照。
 
-```text
-左线：(9.0, 3.5) → (10.0, 3.5) → (13.0, 7.1) → (19.2, 4.3)
-右线：(13.0, -5.0) → (19.2, 4.3)
-```
+目前绿色桌子和工厂左侧路线已经完成在线验证；工厂右侧路线保留为后续扩展。
 
-左右路线默认运行 `8000` 个 50 Hz 控制步，即约 `160秒`；仍可通过 `--num-steps` 自定义。
-
-为减少重复运行时越过路径点或提前转向，中间 waypoint 同时使用 `0.40m` 到达圆和 `0.40m` 过点走廊，最终巡检点使用独立的 `0.20m` 到达半径。切换路段时保留已有 yaw、把前进速度压到 `0.20m/s`，再由指令限幅器连续过渡；新方向误差降到约 `20°` 后恢复正常巡航。G1 步态相位使用仿真时间推进，不再受渲染 FPS 或相机线程延迟影响。
-
-运行前在 OrcaLab 打开 `/home/jason77/SY/demo_v2.json` 并点击运行。Layout 中保留场景物体，Python 只替换代码生成的 `g1_vision_nav`。
-
-```bash
-cd /home/jason77/SY/OrcaPlayground
-conda activate orca
-
-# 左线，空旷路段最高 0.6m/s
-python examples/euler/g1_vision_nav/run_visual_avoidance.py --route left
-
-# 右线
-python examples/euler/g1_vision_nav/run_visual_avoidance.py --route right
-```
-
-只有最终路径点到达后才保存照片：左线默认为 `/tmp/g1_cabinet_left_rgb.png`，右线默认为 `/tmp/g1_cabinet_right_rgb.png`。可用 `--output` 修改路径。
-
-RGB 不能直接测量米制距离。本版“安全距离”特指颜色区域在画面中的占比。发现障碍后，前进速度随风险从 `0.15m/s` 连续降到 `0.05m/s`，侧移最高 `0.15m/s`；路径 yaw 与朝较空一侧的视觉 yaw 连续融合。中心区域清空后，视觉修正在 10 个连续 RGB 帧内逐步衰减，速度从约 `0.25m/s` 平滑恢复到主路径巡航，全程不倒车。桌面建议使用哑光、高饱和绿色或黄色，并与地面保持明显色差；改完 Layout 后需要根据真实截图微调阈值。
-
-## 已确认的本地资产
-
-- OrcaLab G1 spawnable：`assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda`
-- 程序生成的 actor 名称：`g1_vision_nav`
-- 运控参考 MJCF：`assets/g1/g1_29dof_camera.xml`（独立本地模型，不是固定 spawnable）
-- 已验证的相机实体：`camera_head`
-- 头部 RGB WebSocket：`7072`
-- 左侧 RGB WebSocket：`7071`
-- 右侧 RGB WebSocket：`7070`
-- Depth WebSocket：尚未确认，当前禁用
-- G1 低层速度控制模型：`assets/g1/models/dec_loco/model_6600.onnx`
-- 低层模型配置：`assets/g1/config/g1_29dof_hist.yaml`
-- 可复用的 Euler 运控参考：`examples/euler/07_locomotion/`
-- 可复用的相机激活参考：`examples/euler/08_video_capture/`
-
-固定 spawnable 的 MuJoCo 在线导出结果为 `ncam=0`，模型 XML 中不存在 `<camera>`，但这不能排除资产带有 Studio 侧 Camera Component。它包含 `head_camera1`、`head_camera2` 等相机相关 body；相机流以 OrcaLab Studio 的实际在线结果为准。验证程序不会再用 `ncam` 阻止连接。
-
-在线抓帧已经确认 7070、7071、7072 都是独立的三通道 RGB 流，并不是“RGB + Depth”端口对。第一阶段正式使用 7072 头部 RGB；在找到并标定真正的深度端点前，不能用任何一路现有图像计算米制障碍物距离。
-
-机器人 spawnable 已锁定，不再尝试其他 G1 候选路径。在线扫描已确认该资产包含 floating base、29 个标准 G1 关节和 45 个执行器：腿与腰共 15 个位置伺服、双臂共 14 个力矩电机、双手共 16 个位置伺服。现有 locomotion 策略直接从 floating base 和 29 个关节状态构造观测，不依赖旧资产中的 `imu_quat` / `imu_gyro` 传感器名称。
-
-`g1_pick_usda` 的执行器类型与训练用 G1 资产不同，不能直接把 29 维目标关节角送入其位置伺服。`envs/euler/g1_vision_nav/g1_pick_locomotion_env.py` 会先计算策略要求的 PD 力矩，再利用资产公开的 `Kp/Kd` 反算腿和腰的位置指令；双臂仍直接接收力矩，双手保持零控制。
-
-## 分层结构
+这门实训不从“重新训练一套步态”开始，而是复用已经能够稳定行走的 G1 运控模型，
+在它上面开发视觉导航。课程最终完成一条清晰的分层链路：
 
 ```text
-G1 camera_head RGB（约 30 Hz）
-          │
-          ▼
-视觉导航上层（10 Hz）
-RGB + 机器人坐标系目标 + 本体速度 + 上一条指令
-          │
-          ▼
-(forward, lateral, yaw_rate, walk_enabled)
-          │
-          ▼
-限幅 / 加速度限制 / 急停
-          │
-          ▼
-冻结的 G1 locomotion ONNX（50 Hz）
-          │
-          ▼
-29 关节目标 + 物理步 PD（1000 Hz）
+ORCA Lab Layout
+环境、灯光、桌子、货架、电气柜
+               │
+               ▼
+代码通过 AddActor 生成 g1_navi
+并注册 Studio Camera Component
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+camera_head RGB    G1 实时位姿
+WebSocket 7072     gRPC 50051
+        └──────┬──────┘
+               ▼
+视觉导航上层：目标跟随 + RGB 近场避障
+               │
+               ▼
+(vx, vy, yaw_rate, walk_enabled)
+               │
+               ▼
+冻结的 G1 locomotion ONNX
+               │
+               ▼
+29 个本体关节目标 + 混合执行器适配
+               │
+               ▼
+G1 行走、到达巡检点并保存 RGB 照片
 ```
 
-上层只输出机体系速度指令，不直接输出 29 个关节动作。第一版冻结低层模型，不重新训练 G1 运控；这样视觉导航的成功或失败不会和步态训练混在一起。
+课程重点不是让视觉网络直接控制关节，而是理解机器人系统如何分层：
 
-## 当前代码边界
+- ORCA Lab 负责场景编辑、渲染与物理仿真；
+- OrcaGym 负责 Python 与仿真服务之间的通信；
+- OrcaPlayground 中的任务代码负责相机、导航、运控和验收逻辑；
+- 上层导航只给速度指令，底层模型负责把速度变成稳定步态。
 
-- `envs/euler/g1_vision_nav/contracts.py`：视觉观测、速度指令和导航策略接口。
-- `envs/euler/g1_vision_nav/camera_stream.py`：实时 RGB 与可选 depth-preview 客户端。
-- `envs/euler/g1_vision_nav/command_bridge.py`：上层指令限幅，并映射到现有 `G1Locomotion.set_commands()`。
-- `envs/euler/g1_vision_nav/config.py`：相机端口、三层频率、初始安全速度和 G1 模型路径。
-- `envs/euler/g1_vision_nav/point_goal_navigator.py`：把当前路径点误差直接换算成 `vx`、`vy` 和目标角度。
-- `envs/euler/g1_vision_nav/waypoint_route.py`：按顺序管理左/右路线的中间点和最终巡检点。
-- `envs/euler/g1_vision_nav/visual_avoidance.py`：读取 7072 RGB，检测深色、绿色和黄色区域，并在路径控制外增加安全距离动作。
-- `envs/euler/g1_vision_nav/g1_pick_locomotion_env.py`：把现有 29-DoF 运控策略适配到 G1 Pick 的 45 个混合执行器。
-- `envs/euler/g1_vision_nav/g1_camera_validation_env.py`：相机资产预检、RGB 首帧/帧率/内容校验，同时维持原地站立。
-- `envs/euler/g1_vision_nav/g1_vision_nav_env.py`：同步相机、点目标、10 Hz 上层控制、50 Hz 冻结运控、reward 与安全急停。
-- `envs/euler/g1_vision_nav/g1_visual_avoidance_env.py`：记录视觉风险与介入次数，并要求在线测试确实看见障碍、改变指令且安全到达。
-- `scene.yaml`：当前 Layout、障碍物范围、固定 G1 和出生点记录。
-- `layout_scene.py`：读取 OrcaLab v3 Layout JSON，并发布 Layout 全部物体和固定 G1。
-- `validate_locomotion.py`：暂不接视觉导航，只验证现有 G1 ONNX + PD 运控是否能站立和行走。
-- `validate_camera.py`：激活固定 G1 的 7072 Studio 头部实时流，让仿真先 render，再异步验证并保存 RGB 样本。
-- `run_point_goal.py`：运行自动点目标导航，可指定绝对目标或出生朝向前方的相对距离。
-- `run_visual_avoidance.py`：当前正式入口，运行左/右路线、RGB 安全距离、冻结运控与柜前拍照。
+### 1.2 学习目标
 
-`G1VisionNavEnv` 已经完成第一阶段闭环：RGB 与导航状态同步进入 `NavigationObservation`，点目标基线暂时只使用相对目标和本体状态，尚未用 RGB 决策。下一阶段在同一个 `VisualNavigator` 接口下替换为视觉避障策略，无需修改底层 ONNX 运控。
+完成实训后，学员应能够：
 
-## 历史验证资料（不再是当前运行入口）
+1. 在 ORCA Lab 中新建并保存一个可运行的 Layout；
+2. 解释为什么本课程的带相机 G1 由代码通过 `AddActor` 生成；
+3. 理解 gRPC 控制端口和 RGB WebSocket 端口的不同职责；
+4. 复用官方 Lesson 7 的 G1 ONNX 运控模型；
+5. 理解 29 个策略关节如何适配到 G1 Pick 的混合执行器；
+6. 实现世界坐标目标、实时位姿和机体系速度指令之间的转换；
+7. 让 RGB 颜色占比真正改变导航指令；
+8. 依次完成绿色桌子验证和工厂左线巡检；
+9. 区分“已在线验证的能力”和“后续计划”。
 
-以下内容记录旧 `demo1_v1` 单目标实验，保留用于理解运控和相机调试。它使用旧坐标、旧速度和旧绿色工作台命令；不要用它启动当前左右巡检路线。当前操作只使用文档顶部的 `run_visual_avoidance.py --route left/right`。
+### 1.3 运行准备
 
-### 先验证 G1 运控
-
-当前 Layout 文件是 `/home/jason77/SY/demo1_v1.json`，包含 15 个场景物体，不包含 G1。脚本默认在障碍物东侧空地 `(-18.5, -13.5, 0)` 生成 G1，朝 `+x` 方向，首次前进会远离家具。
-
-运行前先保存 Layout JSON，并启动 OrcaLab。脚本会清空 OrcaLab 当前运行场景，再从 JSON 重建场景，因此不要把尚未导出的临时修改留在编辑器里。
+#### 软件与仓库
 
 ```bash
 conda activate orca
 cd /home/jason77/SY/OrcaPlayground
-python examples/euler/g1_vision_nav/validate_locomotion.py
 ```
 
-程序依次验证站立、前进、左转、左移和停止；每个阶段会在终端暂停，观察画面后按 Space 继续。也可以覆盖出生点：
+需要准备：
+
+- ORCA Lab 26.7.1 或项目已经验证过的兼容版本；
+- OrcaGym；
+- OrcaPlayground；
+- `orca` Conda 环境；
+- `numpy`、`onnxruntime`、`Pillow`、`av` 等项目依赖；
+- 可用的 `localhost:50051` 仿真服务。
+
+#### 本 Demo 固定参数
+
+本课程固定使用：
+
+```text
+assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
+```
+
+代码生成的 Actor 统一命名为：
+
+```text
+g1_navi
+```
+
+Asset、Actor 和 Layout 的基础概念已在入门文档中讲解，本篇只记录当前 Demo 使用的
+固定资产路径和运行时 Actor 名称。
+
+## 二、准备 Layout
+
+### 2.1 新建场景
+
+1. 启动 ORCA Lab；
+2. 新建空 Layout；
+3. 从资产中心拖入地面、桌子、货架、控制柜等环境资产；
+4. 在 Outline 中给关键环境 Actor 使用容易辨认的名称；
+5. 调整位置、旋转和碰撞关系；
+6. 从多个视角确认路线中没有肉眼不可见的碰撞体；
+7. 保存或导出 Layout JSON。
+
+设计导航场景时，建议先从简单布局开始：
+
+- 地面保持平整；
+- 起点附近不要放太多物体；
+- 路线宽度明显大于 G1 的身体宽度；
+- 避免两个障碍物之间的缝隙过窄；
+- 使用颜色明显的障碍物验证 RGB 检测；
+- 在最终目标附近预留足够的停止空间。
+
+本课程使用两个 Layout：
+
+```text
+/home/jason77/SY/demo1_v1.json   # 绿色桌子最小闭环
+/home/jason77/SY/demo_v2.json    # 工厂巡检场景
+```
+
+### 2.2 环境和机器人分开加载
+
+环境物体仍然由学员在 UI 中摆放，但本课程控制的 G1 不保存在 Layout 中，而是由
+Python 通过 `OrcaGymScene.add_actor()` 和 `publish_scene()` 生成。
+
+```text
+手动 Layout：地面、桌子、货架、电气柜等环境
+                         +
+Python AddActor：本课程控制的 g1_navi
+```
+
+这样设计的主要原因不是普通关节控制，而是 Studio 相机流的注册方式。
+
+## 三、为什么带相机的 G1 要通过 AddActor 加载
+
+这里最容易混淆的是：**把 G1 手动放进 Layout 后，ORCA Lab 确实可以看到它，也可以在
+界面中切换到它的第一视角。**这说明资产包含相机组件，而且 ORCA Lab 自己能够渲染该
+相机，但不代表外部 Python 控制程序已经能够按 Actor 名称绑定并接收这路 RGB 数据。
+
+这实际上是两条不同的相机使用链路：
+
+```text
+ORCA Lab 界面显示第一视角
+    └── Studio 内部直接使用 Camera Component 渲染
+
+Python 导航程序读取 RGB
+    └── SetCameraSensorInfo 按 Actor 名查找相机
+        └── CameraCaptureComponent 产帧
+            └── WebSocket 7072 把 RGB 发送给控制程序
+```
+
+因此，手动放入 Layout 的 G1 可以被看见，也可以进行关节和运控控制；我们遇到的问题是：
+在当前 Euler + Studio Camera API 链路中，Python 程序无法找到这个手动 Actor 对应的相机
+实体，因而收不到导航所需的 RGB 帧。
+
+官方 Euler Lesson 8 对这个现象给出了原因。Euler 环境后续使用 `LoadLocalEnv`，这条路径
+不会填充 Studio 端用于相机查找的 `m_spawnedEntities`。因此，ORCA Lab 界面虽然能显示
+第一视角，Python 调用 `SetCameraSensorInfo` 时仍可能得到 `Camera actor name not found`。
+
+```text
+手动把 G1 放入 Layout
+        ├── ORCA Lab 显示第一视角：可以
+        ├── Python 控制 G1 关节：可以匹配时可以
+        └── Python 按 Actor 名绑定 RGB：当前链路失败
+```
+
+Lesson 8 因此先让机器人走 AddActor 路径：
+
+```text
+OrcaGymScene.add_actor
+        ↓
+OrcaGymScene.publish_scene
+        ↓
+Studio AddActor 创建 G1
+        ↓
+填充 m_spawnedEntities
+        ↓
+激活 CameraCaptureComponent
+        ↓
+EulerEnv LoadLocalEnv 导出 MJCF 并进行控制
+```
+
+经过 AddActor 后，Studio 会把机器人登记到 `m_spawnedEntities`，程序才能按 `g1_navi`
+找到相机、激活 `CameraCaptureComponent`，并从 7072 获得连续 RGB 帧：
+
+```text
+Python AddActor 生成 G1
+        ├── ORCA Lab 显示第一视角：可以
+        ├── Python 控制 G1 关节：可以
+        └── Python 按 Actor 名绑定 RGB：可以
+```
+
+所以我们选择 AddActor，并不是因为手动 G1 没有摄像头，也不是因为它完全不能控制，而是
+因为本 Demo 的避障算法必须在 Python 中拿到每一帧 RGB。若只有 ORCA Lab 界面能看到画面，
+程序却收不到像素数据，就无法计算绿色、黄色和深色区域占比，也无法让视觉信息改变运动
+指令。
+
+官方 Lesson 8 使用的是空关卡；本课程在此基础上做了一层工程适配：环境、桌子和电气柜
+继续保留在手动打开的 Layout 中，Python 只发布机器人 Actor。核心代码等价于：
+
+```python
+scene = OrcaGymScene(grpc_addr=grpc_addr)
+scene.add_actor(
+    Actor(
+        name="g1_navi",
+        asset_path="assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
+        position=np.asarray((8.0, 0.463668, 0.0)),
+        rotation=np.asarray((1.0, 0.0, 0.0, 0.0)),
+        scale=1.0,
+    )
+)
+scene.publish_scene()
+```
+
+也就是说，官方依据解释的是“为什么相机机器人要经过 AddActor”；“保留手动 Layout、
+只发布 G1”则是本 Demo 在官方机制上做的组合方式。
+
+官方依据：
+
+- [OrcaPlayground Euler Lesson 8 文档](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/euler/08_video_capture/08_video_capture.md)
+- [OrcaPlayground Euler Lesson 8 代码](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/euler/08_video_capture/video_capture.py)
+- 本地对应文件：`examples/euler/08_video_capture/08_video_capture.md`
+
+## 四、正确启动 ORCA Lab
+
+打开 Layout 后点击运行，选择：
+
+```text
+No simulation program (manual launch)
+```
+
+不要同时启动 Empty Loop Simulation。否则两个程序可能同时推进同一仿真，造成画面在
+正常站立与摔倒状态之间跳动。
+
+正确工作流是：
+
+```text
+ORCA Lab 打开对应 Layout
+        ↓
+点击运行
+        ↓
+选择 No simulation program (manual launch)
+        ↓
+保持 ORCA Lab 运行
+        ↓
+在终端启动 Python Demo
+```
+
+## 五、三条通信链路
+
+| 地址 | 用途 | 通俗理解 |
+| --- | --- | --- |
+| `localhost:50051` | OrcaGym 与 ORCA Lab 的 gRPC 控制 | Python 与仿真平台之间的“控制电话” |
+| `localhost:7072` | `camera_head` RGB WebSocket | 相机持续发送图像的“视频频道” |
+| `localhost:8765` | 可选浏览器调试页面 | 把 7072 图像和导航状态转给浏览器查看 |
+
+ORCA Lab 可以直接显示 G1 第一视角，因此 8765 默认关闭。关闭浏览器窗口不会影响导航，
+而 7072 图像流中断会让视觉导航进入等待或安全停止逻辑。
+
+## 六、我们直接复用的底层运控
+
+### 6.1 模型与配置
+
+本课程不重新训练底层步态，直接复用官方 Euler Lesson 7 所使用的文件：
+
+```text
+assets/g1/models/dec_loco/model_6600.onnx
+assets/g1/config/g1_29dof_hist.yaml
+assets/g1/g1_29dof_camera.xml
+```
+
+官方 Lesson 7 将控制链路描述为：
+
+```text
+速度指令 + 本体状态 + 关节状态 + 历史观测
+                    ↓
+             ONNX 策略推理
+                    ↓
+       12 维 lower-body policy action
+                    ↓
+与 17 维 upper-body reference 合并
+                    ↓
+           29 维 q_target
+                    ↓
+tau = Kp × (q_target - q) + Kd × (0 - qd)
+                    ↓
+              关节执行器
+```
+
+官方依据：
+
+- [OrcaPlayground Euler Lesson 7](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/euler/07_locomotion/07_locomotion.md)
+- 本地对应文件：`examples/euler/07_locomotion/07_locomotion.md`
+
+### 6.2 上层与下层的接口
+
+导航层只输出：
+
+```python
+VelocityCommand(
+    forward_mps=...,
+    lateral_mps=...,
+    yaw_rate_rps=...,
+    walk_enabled=True,
+)
+```
+
+`command_bridge.py` 把它送入 `G1Locomotion.set_commands()`。上层不直接修改 29 个关节，
+因此调 waypoint 或 RGB 阈值时不需要重新训练步态。
+
+### 6.3 如果想重新训练
+
+官方 `examples/legged_gym` 提供足式机器人训练入口，支持 G1，并提供 SB3 PPO 与
+RLlib APPO 两条链路。官方当前说明中，SB3 PPO 更适合先获得可用步态，RLlib APPO
+仍属于需要继续调参的实验链路。
+
+官方入口：
+
+- [OrcaPlayground Legged Gym 使用指南](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/legged_gym/README.md)
+- 本地 G1 配置：`envs/legged_gym/robot_config/g1_config.py`
+- 统一入口：`examples/legged_gym/run_legged_rl.py`
+
+训练命令结构为：
 
 ```bash
-python examples/euler/g1_vision_nav/validate_locomotion.py \
-    --spawn-x -18.5 --spawn-y -13.5 --spawn-yaw 0
+python examples/legged_gym/run_legged_rl.py \
+  --config examples/legged_gym/configs/sb3_ppo_config.yaml \
+  --train
 ```
 
-这一步的通过条件是 G1 不摔倒、基座高度维持在 `0.6–0.9m`、ONNX 输出有限且关节力矩没有持续触限。它不读取相机，也不测试导航。
+训练前应按官方 README 把配置中的 `agent_name` 和场景机器人改成 G1，并核对观测、
+动作、关节顺序和执行器类型。新训练出来的策略不保证能直接替换本课程的
+`model_6600.onnx`：只有输入布局、动作含义、关节顺序、缩放和控制频率全部一致时，
+才是可直接替换的 checkpoint。
 
-2026-08-21 的完整 1000 步测试结果为 `82/82 passed`：站立、`0.5m/s` 前进、左转、`0.3m/s` 侧移和停止全部通过。基座高度约为 `0.729–0.790m`，最大俯仰/横滚倾角约 `0.084rad`，策略输出始终有限，统计到的力矩触限比例为 `0`。
+## 七、29 个关节如何对齐 G1 Pick
 
-## 相机验证
+### 7.1 数量关系
 
-相机依赖已安装到 `orca` 环境：`av` 和 `opencv-python`。补好资产传感器后运行：
+```text
+29 个策略本体关节
+├── 双腿 12：每条腿 6
+├── 腰部 3
+└── 双臂 14：每条手臂 7
+
+g1_pick_usda 自身执行器
+├── 本体执行器 29
+│   ├── 位置执行器 15：双腿 12 + 腰部 3
+│   └── 力矩 motor 14：双臂
+└── 手部/夹爪辅助执行器 16：本课程保持零控制
+```
+
+场景中还可能有其他带执行器的机器人。它们属于整个 MuJoCo 模型的全局 `nu`，不能
+误算成 G1 的夹爪数量。代码按 `g1_navi_` Actor 前缀区分 G1 与场景其他执行器。
+
+### 7.2 名称对齐
+
+`g1_pick_locomotion_env.py` 按 29 个关节全名寻找执行器，并要求每个关节恰好匹配一个：
+
+```text
+g1_navi_left_hip_pitch_joint
+g1_navi_left_hip_roll_joint
+...
+g1_navi_right_wrist_yaw_joint
+```
+
+如果 Actor 名称不同，运行时关节前缀也会不同。因此 Actor 名、`agent_names` 和关节前缀
+必须一致。这也是项目把机器人 Actor 统一命名为 `g1_navi` 的原因。
+
+### 7.3 混合执行器转换
+
+策略首先按训练模型计算期望 PD 力矩 `tau`。对于力矩 motor，可以直接发送 `tau`；
+对于资产内置的位置执行器，需要反解它的控制目标：
+
+```text
+资产位置执行器近似关系：
+tau = kp_asset × (ctrl - q) - kd_asset × qd
+
+反解得到：
+ctrl = q + (tau + kd_asset × qd) / kp_asset
+```
+
+这样同一个 29 关节策略才能同时驱动位置型腿/腰和力矩型双臂。实现位置：
+
+```text
+envs/euler/g1_vision_nav/g1_pick_locomotion_env.py
+```
+
+## 八、导航架构
+
+### 8.1 世界坐标目标不是固定速度脚本
+
+每次导航更新都会读取 G1 当前世界坐标和 base yaw，把世界坐标 waypoint 转换到机器人
+坐标系：
+
+```text
+delta_world = waypoint_world - robot_world
+delta_body  = body_rotation.T × delta_world
+bearing     = atan2(delta_body_y, delta_body_x)
+```
+
+然后根据实时距离和 bearing 重新计算 `vx` 与 `yaw_rate`。所以机器人避障偏离主路线后，
+控制器仍知道自己的当前位置，并能重新朝当前 waypoint 收敛。
+
+### 8.2 RGB 视觉层做什么
+
+当前 G1 头部相机俯角较大，主要用于近场安全。视觉层从 RGB 中检测当前固定场景内的
+目标颜色，统计左、中、右区域占比：
+
+```text
+中央占比低：直接执行 waypoint 指令
+中央出现障碍：降低前进速度，锁定较空一侧并增加侧移/yaw
+画面连续清晰：逐步衰减视觉修正，重新交给 waypoint 跟随
+```
+
+RGB 颜色占比不是米制距离，也不是通用物体检测。本课程把它定位为“容易解释、容易
+复现的视觉闭环基线”。未来可以替换为深度图、语义分割或学习型占用网络，但仍保留
+相同的速度指令接口。
+
+## 九、Demo A：绿色桌子最小闭环
+
+对应分支：
+
+```text
+feature/demo1-v1-green-table
+```
+
+先切换到对应分支：
 
 ```bash
-conda activate orca
-cd /home/jason77/SY/OrcaPlayground
-python examples/euler/g1_vision_nav/validate_camera.py
+git switch feature/demo1-v1-green-table
 ```
 
-程序会自动尝试解析并激活固定 G1 的 Studio Camera Component，让 G1 原地站立约 10 秒，验证 RGB 分辨率、数据类型、非空画面和帧号增长，并把样本保存到 `/tmp/g1_camera_head_rgb.png`。
-
-相机客户端在 `set_camera_sensor_info()` 后立即启动，但不会在第一个控制步之前阻塞等待图像；仿真会先持续执行 `step()` 和 `render()`，随后在循环中轮询首帧。这适配了由 Studio 渲染而非 MuJoCo `ncam` 直接提供的 Camera Component。
-
-固定 G1 实际包含 `head_cam`、`camera_left`、`camera_right` 三路 Camera Component。2026-08-21 在线同时抓帧确认其原生映射为：`camera_head/head_cam → 7072`、`camera_left → 7071`、`camera_right → 7070`。激活时不能把 actor 下所有相机强制覆盖成同一个 WebSocket 端口；代码保留资产的原生端口分配，只连接 7072 头部 RGB。
-
-7072 画面方向是正立的，但固定资产当前的头部相机俯角较大，主要覆盖双臂、脚和近处地面，远处障碍物与地平线基本不可见。当前 Demo 接受这一硬件视角，通过降低速度把它作为近场安全相机使用；约 1–2 米范围的工作台已经能稳定进入画面。若后续需要更高速导航、远距离规划或语义巡检，仍建议在资产侧增加真正的前视相机。
-
-当前 OrcaGym Euler 公共接口只能激活相机，并修改分辨率、FOV、裁剪面和流端口，没有修改 Studio Camera Component 位置或旋转的接口。因此相机俯角不能在本 Demo 的 Python 代码里直接修正；必须把调整保存在可生成的资产/预制体中，或由 OrcaLab 后续提供可持久化的实例组件位姿接口。
-
-## 点目标导航
-
-第一阶段先验证上层目标控制与冻结运控之间的闭环。默认目标位于出生朝向前方 1 米，控制器先站立 2 秒等待相机，然后以最高 `0.15m/s` 前进、`0.08m/s` 横移和 `0.35rad/s` 转向。大角度时先原地转向，接近目标后使用前进、横移和转向的低速组合消除二维误差。
+运行入口：
 
 ```bash
-conda activate orca
-cd /home/jason77/SY/OrcaPlayground
-python examples/euler/g1_vision_nav/run_point_goal.py
+python examples/euler/g1_vision_nav/run_green_table_crossing.py
 ```
 
-指定世界坐标目标：
+固定条件：
+
+```text
+Layout: demo1_v1.json
+G1 出生点: (4.7, -8.0)
+绿色桌子: 约 (4.7, -5.0)
+目标点: (4.7, 0.0)
+```
+
+起点到目标点的直线会穿过绿色桌子，因此它适合证明 RGB 是否真的改变了动作。
+
+逻辑：
+
+1. 点目标控制器实时计算前往 `(4.7, 0.0)` 的速度；
+2. 7072 RGB 的中央区域出现足够多绿色像素；
+3. 控制器选择画面较空的一侧；
+4. 以小前进速度配合 yaw 绕开桌子；
+5. 中央区域清空后，立即用当前位置重新计算目标指令；
+6. 进入目标半径后停止。
+
+这个 Demo 的教学价值是让学员先看懂最小闭环：
+
+```text
+目标跟随本来想直走
+→ RGB 发现绿色桌子
+→ RGB 临时改变速度指令
+→ 清空后重新跟随目标
+```
+
+## 十、Demo B：工厂电气柜巡检
+
+对应分支：
+
+```text
+demo1-v1-factory-navi
+```
+
+先切换到对应分支：
 
 ```bash
-python examples/euler/g1_vision_nav/run_point_goal.py \
-    --goal-x -18.5 --goal-y -12.7 --num-steps 900
+git switch demo1-v1-factory-navi
 ```
 
-程序同时检查基座高度、倾角、策略输出、力矩触限、RGB 帧增长和非足部环境碰撞。脚部支撑接触允许；跌倒会保持急停，身体碰撞则先停 1 秒，再依据 RGB 左右占比向较空一侧执行 5 秒脱困，避免贴住障碍后永久锁死。
-
-2026-08-21 在线结果：
-
-- 前方点目标：初始距离 `1.323m`，最终 `0.310m`，`125/125 passed`。
-- 左侧点目标：完成明显左转和弧线接近，最终 `0.313m`、最小 `0.296m`，`156/156 passed`。
-- 两次测试均未跌倒、未检测到非足部环境碰撞，7072 RGB 全程连续产帧。
-
-`run_point_goal.py` 本身不是视觉避障：RGB 虽已进入统一观测并在线验证，但 `PointGoalNavigator` 明确不读取像素。它用于排除世界坐标、坐标系转换、速度桥接和底层步态问题；下一节的 `run_visual_avoidance.py` 才会让 RGB 实际改变运动指令。
-
-`--num-steps` 是 50 Hz 低层控制步数，因此仿真窗口约为 `num_steps / 50` 秒。增大它只会延长运行时间，不会提高速度；到达目标后 G1 会保持站立直到窗口结束。例如 `4000` 步约为 80 秒。
-
-## RGB 工作台避障
-
-第一版视觉闭环直接读取固定 G1 的 `camera_head → 7072` RGB。它在画面上方 72% 的近场区域检测当前 Layout 中的绿色工作台，比较画面左右占用率；达到风险阈值后会限制前进速度、向较空一侧横移并转向。工作台刚离开画面时，控制器仍保持约 6 秒的低速斜向绕行，避免立刻转回目标而擦碰桌边。
-
-运行默认验证路线：
+正式入口：
 
 ```bash
-conda activate orca
-cd /home/jason77/SY/OrcaPlayground
-python examples/euler/g1_vision_nav/run_visual_avoidance.py --num-steps 4000
+python examples/euler/g1_vision_nav/run_factory_inspection.py --route left
 ```
 
-导航程序默认启动独立的 G1 第一视角浏览器窗口，地址为
-`http://127.0.0.1:8765`。页面显示 `camera_head` 实时 RGB，并叠加当前
-waypoint、速度指令、视觉风险、避障模式和安全状态。关闭或刷新浏览器页面
-不会停止导航；如果浏览器没有自动打开，手动访问该地址即可。可用
-`--no-camera-window` 禁用，或用 `--camera-window-port 8766` 修改端口。
+固定条件：
 
-默认出生点仍为 `(-18.5, -13.5)`，目标为 `(-22.0, -15.7)`；直线路径会接近 `industrial_workbench_1`，因而能够验证 RGB 是否真实改变了指令。也可覆盖目标：
+```text
+Layout: demo_v2.json
+G1 出生点: (8.0, 0.463668)
+最终巡检点: (19.2, 4.3)
+
+左线:
+(9.0, 3.5) → (10.0, 3.5) → (13.0, 7.1) → (19.2, 4.3)
+```
+
+逻辑：
+
+1. `WaypointRoute` 选择当前 waypoint；
+2. `PointGoalNavigator` 根据实时位置和 yaw 生成主路径指令；
+3. `FactoryColorObstacleDetector` 读取 7072 RGB；
+4. 中央出现深色、绿色或黄色近场区域时，视觉层减速并修正侧移/yaw；
+5. 连续清晰 10 帧后，修正量逐步降为零；
+6. 中间 waypoint 进入 `0.40m` 到达圆即可切换；
+7. 如果轻微越过中间点，但仍在 `0.40m` 路径走廊内，也允许进入下一段；
+8. 最终巡检点不使用越过判定，必须进入 `0.20m` 半径；
+9. 到达后停止，并把最后一帧保存到 `/tmp/g1_cabinet_left_rgb.png`。
+
+左线已经在线验证并完成视频录制。右线命令为：
 
 ```bash
-python examples/euler/g1_vision_nav/run_visual_avoidance.py \
-    --goal-x -22.0 --goal-y -15.7 --num-steps 4000
+python examples/euler/g1_vision_nav/run_factory_inspection.py --route right
 ```
 
-2026-08-21 在线结果为 `655/655 passed`：初始目标距离 `3.864m`，最终 `0.309m`、最小 `0.293m`；视觉风险峰值 `0.0569`，视觉层介入 `282` 个 10 Hz 决策步；全程未跌倒、未发生非足部环境碰撞，7072 RGB 持续产帧。到达约发生在 step 2400，之后继续稳定站立到 step 4000。
+但右线目前属于后续开发，不应在课程中写成“已经验收通过”。可以把它设计成课后作业：
+让学员调整 waypoint、障碍阈值和安全恢复参数，并提交路线视频与最终照片。
 
-这仍是面向当前 Layout 的可解释基线，不是通用障碍物感知：它可靠覆盖绿色工作台，但不能据此宣称已经识别白色桌腿、黑白货架、透明物体或任意新纹理。后续应保留这条确定性基线用于回归测试，同时采集 RGB、位姿、接触和动作数据，训练或接入类别无关的深度/占用感知上层。
+## 十一、核心代码阅读顺序
 
-## 资产中心选环境时记录这些信息
+建议按数据流阅读，而不是按文件大小阅读：
 
-1. 环境资产卡片里的完整 `Path`，不是中文显示名或缩略图标题。
-2. 导入/订阅后实际生成的 actor 名称。
-3. 场景推荐出生位置和朝向；至少要有一个离障碍物安全的位置。
-4. 可行走区域的大致 x/y 范围，以及地面高度。
-5. 场景是否自带动态物体、楼梯、透明材质或无碰撞装饰物。
+1. `run_factory_inspection.py`：任务入口、路线、出生点和依赖组装；
+2. `layout_scene.py`：AddActor 与相机注册；
+3. `config.py`：端口、频率、速度、到达半径；
+4. `waypoint_route.py`：当前路径点与切换条件；
+5. `point_goal_navigator.py`：实时位姿如何变成速度；
+6. `factory_inspection_navigator.py`：RGB 如何修正主路径；
+7. `g1_camera_stream_env.py`：相机激活、取帧和最终照片；
+8. `g1_vision_nav_env.py`：10 Hz 导航、50 Hz 运控与安全恢复；
+9. `g1_pick_locomotion_env.py`：29 关节到混合执行器的适配；
+10. `g1_factory_inspection_env.py`：任务级日志和验收指标。
 
-把前四项填入 `scene.yaml` 或直接发给开发者。确定性 RGB 工作台避障完成后，训练版视觉导航阶段依次完成：
+## 十二、验收标准
 
-1. 确定可行走边界、训练出生点和目标采样范围。
-2. 为桌子、货架等障碍物确认可用于碰撞统计的 geom/body 名称。
-3. 将 7072 RGB 缩放后与相对目标、本体速度和上一条指令组成训练观测。
-4. 用类别无关的学习策略替换当前绿色工作台检测器，动作继续使用 `(forward, lateral, yaw_rate)`。
-5. 先在稀疏障碍课程训练，再逐渐增加桌子密度、目标距离、纹理和光照变化。
-6. 保留当前点目标控制器作为无障碍基线和回归测试，不重新训练底层 G1 步态。
+### 12.1 绿色桌子 Demo
 
-## 上层训练的第一版定义
+- G1 未跌倒；
+- 7072 RGB 帧持续增长；
+- 图像中实际观察到绿色桌面；
+- 视觉层至少介入一次；
+- G1 绕过桌子并进入目标半径。
 
-- 观测：缩放后的 RGB、目标在机器人坐标系的 `(x, y)`、本体平面速度、偏航角速度、上一条速度指令。
-- 动作：`forward`、`lateral`、`yaw_rate` 三个连续量；到达目标或急停时关闭 walking。
-- 正奖励：目标距离减少、到达目标。
-- 负奖励：碰撞、跌倒、超时、动作突变、无进展。
-- Curriculum：空旷目标跟随 → 稀疏静态障碍 → 密集障碍/拐角 → 纹理和光照随机化。
+### 12.2 工厂左线巡检
 
-第一阶段不做语义巡检，也不做端到端图像到关节动作。等 point-goal 导航稳定后，再加入巡检点序列、目标识别和任务状态机。
+- G1 依次完成全部左线 waypoint；
+- 运行中持续读取实时坐标和 yaw；
+- RGB 风险实际改变过导航指令；
+- 短暂碰撞可以恢复，连续确认跌倒必须停止；
+- 最终距离不超过 `0.20m`；
+- `/tmp/g1_cabinet_left_rgb.png` 存在且不是空白图；
+- 保存俯视录屏、第一视角和终端最终结果。
+
+## 十三、常见错误
+
+### 13.1 相机 Actor 找不到
+
+检查 G1 是否由当前脚本通过 AddActor 生成，以及 Actor 名是否为 `g1_navi`。不要把
+Layout 中手动拖入的另一个 G1 与代码生成的 G1 混为同一个实例。
+
+### 13.2 画面在站立和摔倒之间跳动
+
+检查是否同时启动了 Empty Loop Simulation 和命令行任务。使用 manual launch，只保留
+一个仿真推进程序。
+
+### 13.3 关节匹配数量为零
+
+查看报错列出的运行时关节前缀。Actor 名、`agent_names` 和关节前缀必须一致。
+
+### 13.4 RGB 有画面但机器人不避障
+
+先确认 frame index 持续增长，再观察中央颜色占比、阈值和 `latest_mode`。Studio 能显示
+画面不等于 Python 一定连接了 7072 WebSocket。
+
+### 13.5 G1 越过 waypoint 后不切换
+
+检查当前点到达半径、过点走廊、路段起点以及实时坐标。最终点必须使用严格到达半径，
+不能用中间点的“越过”规则代替。
+
+## 十四、建议授课节奏
+
+| 环节 | 建议时间 | 结果 |
+| --- | ---: | --- |
+| ORCA 架构与 Layout | 20 分钟 | 学员能解释三个软件层次 |
+| 新建并保存 Layout | 25 分钟 | 得到环境 JSON |
+| AddActor 与相机原理 | 20 分钟 | 能解释官方 Lesson 8 的限制 |
+| 官方 G1 运控与关节适配 | 30 分钟 | 看懂 29→45 的适配边界 |
+| 绿色桌子最小闭环 | 25 分钟 | 理解 RGB 如何改变指令 |
+| 工厂左线巡检 | 35 分钟 | 到柜前并保存照片 |
+| 日志、视频与复盘 | 15 分钟 | 完成验收记录 |
+
+## 十五、课后扩展
+
+1. 完成并在线验收工厂右线；
+2. 把固定颜色检测替换为语义分割；
+3. 接入真正的 depth 或点云，实现米制安全距离；
+4. 增加多个巡检柜和任务顺序；
+5. 为巡检照片增加目标检测或异常识别；
+6. 按官方 Legged Gym 流程重新训练 G1 运控，并完成新的关节/观测适配；
+7. 将 Layout、配置、视频、照片和 commit 固化为可复现实训发布包。

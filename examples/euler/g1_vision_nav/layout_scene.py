@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from orca_gym.scene.orca_gym_scene import Actor, OrcaGymScene
 
 
 @dataclass(frozen=True)
@@ -100,6 +99,11 @@ def publish_layout_with_g1(
     only G1. ``include_layout_actors`` is retained for standalone reconstruction
     of simple layouts that contain only AssetActor entries.
     """
+    # Delay OrcaGym runtime/log initialization until an online scene is
+    # actually published. This keeps --help and CPU tests independent of the
+    # running OrcaLab process.
+    from orca_gym.scene.orca_gym_scene import Actor, OrcaGymScene
+
     path = Path(layout_path).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -107,6 +111,9 @@ def publish_layout_with_g1(
     if g1_actor_name in {spec.name for spec in layout_specs}:
         raise ValueError(f"G1 actor name collides with a layout actor: {g1_actor_name!r}")
 
+    # The first empty publish removes actors created by an earlier script, not
+    # the manually opened factory Layout. The second publish adds g1_navi via
+    # AddActor so Studio registers its Camera Component for gRPC activation.
     scene = OrcaGymScene(grpc_addr=grpc_addr)
     try:
         scene.publish_scene()

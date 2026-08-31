@@ -1,4 +1,10 @@
-"""Run RGB-driven workbench avoidance with frozen G1 locomotion."""
+"""Run the G1 waypoint-based factory inspection Demo.
+
+Pipeline:
+    open demo_v2 Layout -> AddActor(g1_navi) -> follow left/right waypoints
+    -> apply camera_head RGB obstacle correction -> frozen locomotion ONNX
+    -> reach the electrical cabinet -> save one inspection RGB image
+"""
 
 from __future__ import annotations
 
@@ -8,8 +14,6 @@ import sys
 import time
 from dataclasses import replace
 from pathlib import Path
-
-from layout_scene import publish_layout_with_g1
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LAYOUT_PATH = PROJECT_ROOT.parent / "demo_v2.json"
@@ -44,8 +48,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--camera-window",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="显示独立的 G1 camera_head 第一视角窗口（默认开启）",
+        default=False,
+        help="显示独立的 G1 camera_head 浏览器窗口（默认关闭）",
     )
     parser.add_argument(
         "--camera-window-port",
@@ -74,20 +78,26 @@ def _load_components():
         sys.path.insert(0, lesson_dir_string)
 
     from g1_base_env import G1_FRAME_SKIP, G1_MODEL_XML, G1_TIME_STEP
+    from layout_scene import publish_layout_with_g1
     from online_verifier import OnlineVerifier
 
     from envs.euler.g1_vision_nav.config import DEFAULT_CONFIG
-    from envs.euler.g1_vision_nav.g1_visual_avoidance_env import G1VisualAvoidanceEnv
-    from envs.euler.g1_vision_nav.visual_avoidance import VisualAvoidanceNavigator
+    from envs.euler.g1_vision_nav.factory_inspection_navigator import (
+        FactoryInspectionNavigator,
+    )
+    from envs.euler.g1_vision_nav.g1_factory_inspection_env import (
+        G1FactoryInspectionEnv,
+    )
 
     return (
         DEFAULT_CONFIG,
-        G1VisualAvoidanceEnv,
-        VisualAvoidanceNavigator,
+        G1FactoryInspectionEnv,
+        FactoryInspectionNavigator,
         G1_FRAME_SKIP,
         G1_MODEL_XML,
         G1_TIME_STEP,
         OnlineVerifier,
+        publish_layout_with_g1,
     )
 
 
@@ -113,6 +123,11 @@ def _create_env_with_retry(environment_class, *, timeout_s: float, **kwargs):
 
 
 def main() -> None:
+    # ------------------------------------------------------------------
+    # 1. Demo contract: choose one fixed world-frame route. Both routes end
+    #    at the same cabinet inspection point; changing --route changes only
+    #    the ordered waypoints, not the low-level locomotion policy.
+    # ------------------------------------------------------------------
     args = parse_args()
     if args.num_steps is None:
         args.num_steps = DEFAULT_STEPS[args.route]
@@ -134,6 +149,7 @@ def main() -> None:
         model_xml,
         time_step,
         verifier_class,
+        publish_scene,
     ) = _load_components()
     command_limits = replace(
         config.command_limits,
@@ -168,7 +184,11 @@ def main() -> None:
         f"[INFO] Runtime window: {args.num_steps} control steps ~= {args.num_steps / config.timing.locomotion_hz:.1f}s"
     )
 
-    publish_layout_with_g1(
+    # ------------------------------------------------------------------
+    # 2. Keep the manually opened factory Layout and publish only G1 through
+    #    AddActor. This registers camera_head with Studio's gRPC camera path.
+    # ------------------------------------------------------------------
+    publish_scene(
         grpc_addr=args.addr,
         layout_path=args.layout,
         g1_actor_name=config.scene.robot_actor_name,
@@ -181,6 +201,11 @@ def main() -> None:
         print(f"[INFO] G1 已注册；等待服务重启 {args.publish_wait:.1f}s...")
         time.sleep(args.publish_wait)
 
+    # ------------------------------------------------------------------
+    # 3. Online closed loop:
+    #    live pose -> waypoint command -> RGB correction -> ONNX locomotion.
+    #    The final RGB frame is saved only after the route is completed.
+    # ------------------------------------------------------------------
     env = _create_env_with_retry(
         environment_class,
         timeout_s=args.startup_timeout,

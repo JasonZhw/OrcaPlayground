@@ -1,4 +1,4 @@
-"""Simple RGB color occupancy and local clearance control for Demo 1."""
+"""Factory RGB obstacle perception and local waypoint-command correction."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from envs.euler.g1_vision_nav.point_goal_navigator import PointGoalNavigator
 
 
 @dataclass(frozen=True)
-class VisualRiskEstimate:
+class FactoryObstacleRisk:
     """Colored obstacle occupancy measured in the navigable camera region."""
 
     risk_fraction: float
@@ -31,14 +31,22 @@ class VisualRiskEstimate:
     yellow_fraction: float
 
 
-class ColorObstacleDetector:
+class FactoryColorObstacleDetector:
     """Detect dark, green, and yellow obstacle surfaces in camera_head RGB."""
 
     def __init__(self, config: VisualAvoidanceConfig | None = None) -> None:
         self.config = config or VisualAvoidanceConfig()
 
-    def estimate(self, rgb: np.ndarray) -> VisualRiskEstimate:
+    def estimate(self, rgb: np.ndarray) -> FactoryObstacleRisk:
         """Return per-region occupancy, excluding sky and the arm-heavy bottom."""
+        # --------------------------------------------------------------
+        # Perception block
+        # 1. Keep the middle near-field strip because the head camera points
+        #    downward and the lower image contains G1's hands and feet.
+        # 2. Combine dark, green, and yellow masks for this fixed factory.
+        # 3. Use center occupancy as immediate route risk; retain left/right
+        #    occupancy only to select the clearer avoidance direction.
+        # --------------------------------------------------------------
         image = np.asarray(rgb)
         if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
             raise ValueError("rgb must be an HxWx3 uint8 array")
@@ -74,7 +82,7 @@ class ColorObstacleDetector:
         # not activate avoidance by itself.  Left/right occupancy is retained
         # to choose which way to pass a center obstacle.
         risk = center
-        return VisualRiskEstimate(
+        return FactoryObstacleRisk(
             risk_fraction=risk,
             left_fraction=left,
             center_fraction=center,
@@ -92,12 +100,7 @@ class ColorObstacleDetector:
         return 0.0 if mask.size == 0 else float(np.count_nonzero(mask) / mask.size)
 
 
-# Retain the old import name for existing examples while using the broader
-# detector everywhere.
-GreenWorkbenchDetector = ColorObstacleDetector
-
-
-class VisualAvoidanceNavigator:
+class FactoryInspectionNavigator:
     """Blend RGB obstacle steering into the point-goal path follower.
 
     The selected avoidance side is latched until the center view has remained
@@ -119,8 +122,8 @@ class VisualAvoidanceNavigator:
             navigation=self.navigation,
             limits=self.limits,
         )
-        self.detector = ColorObstacleDetector(self.visual)
-        self.latest_risk: VisualRiskEstimate | None = None
+        self.detector = FactoryColorObstacleDetector(self.visual)
+        self.latest_risk: FactoryObstacleRisk | None = None
         self.latest_base_command = VelocityCommand.stopped()
         self.intervention_count = 0
         self.maximum_risk_fraction = 0.0
@@ -190,6 +193,14 @@ class VisualAvoidanceNavigator:
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Follow the path and continuously blend steering away from RGB risk."""
+        # --------------------------------------------------------------
+        # Navigation decision block
+        # - The pose controller always recomputes a command to the current
+        #   waypoint from the live G1 position and yaw.
+        # - Visible center risk temporarily adds one latched steering vector.
+        # - After consecutive clear frames, the correction fades to zero and
+        #   the live waypoint command regains full control.
+        # --------------------------------------------------------------
         base = self.goal_navigator.act(observation)
         self.latest_base_command = base
         if not base.walk_enabled:
@@ -305,7 +316,7 @@ class VisualAvoidanceNavigator:
             walk_enabled=True,
         )
 
-    def _choose_clear_side(self, risk: VisualRiskEstimate, goal_bearing_rad: float) -> int:
+    def _choose_clear_side(self, risk: FactoryObstacleRisk, goal_bearing_rad: float) -> int:
         difference = risk.left_fraction - risk.right_fraction
         if abs(difference) >= self.visual.clear_side_margin:
             return 1 if difference < 0.0 else -1

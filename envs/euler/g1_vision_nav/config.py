@@ -274,7 +274,7 @@ class SceneConfig:
     environment_asset_path: str | None = None
     environment_actor_name: str | None = None
     robot_asset_path: str = "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda"
-    robot_actor_name: str = "g1_vision_nav"
+    robot_actor_name: str = "g1_navi"
 
 
 @dataclass(frozen=True)

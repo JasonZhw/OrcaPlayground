@@ -57,6 +57,12 @@ class WaypointRoute:
         self._segment_start = None
 
     def update(self, robot_xy: Sequence[float]) -> RouteUpdate:
+        """Advance when G1 reaches a waypoint or safely crosses its corridor."""
+        # Intermediate points accept either entry into the arrival circle or
+        # crossing the endpoint plane inside a narrow corridor. The latter
+        # prevents a small overshoot from leaving the robot stuck forever.
+        # The final inspection point never uses this fallback: G1 must enter
+        # the stricter final arrival radius before the photo may be saved.
         position = np.asarray(robot_xy, dtype=np.float64).reshape(2)
         if not np.all(np.isfinite(position)):
             raise ValueError("robot_xy must be finite")

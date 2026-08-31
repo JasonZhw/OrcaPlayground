@@ -1,4 +1,4 @@
-"""Online RGB-camera validation while ``g1_pick_usda`` stands safely."""
+"""Studio camera-stream lifecycle shared by the factory inspection task."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from envs.euler.g1_vision_nav.config import CameraConfig
 from envs.euler.g1_vision_nav.g1_pick_locomotion_env import G1PickLocomotionEnv
 
 
-class G1CameraValidationEnv(G1PickLocomotionEnv):
-    """Validate the head RGB stream without asking G1 to walk."""
+class G1CameraStreamEnv(G1PickLocomotionEnv):
+    """Activate, consume, verify, optionally preview, and close head RGB."""
 
     FRAME_CHECK_INTERVAL = 25
-    VIDEO_DIR = Path("/tmp/g1_camera_validation_video")
+    VIDEO_DIR = Path("/tmp/g1_factory_inspection_video")
 
     def __init__(
         self,
@@ -49,6 +49,11 @@ class G1CameraValidationEnv(G1PickLocomotionEnv):
 
     def before_loop(self, verifier) -> None:
         """Activate Studio RGB capture before the first render cycle."""
+        # Camera block:
+        # - g1_pick_usda exposes its camera through an OrcaLab Studio Camera
+        #   Component, so MuJoCo ncam may legitimately remain zero.
+        # - AddActor registration lets set_camera_sensor_info activate that
+        #   component and publish camera_head RGB over WebSocket port 7072.
         if self.sample_path.exists():
             self.sample_path.unlink()
         camera_count = int(self.model.model_info.get("ncam", 0))

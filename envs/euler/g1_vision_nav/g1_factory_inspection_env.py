@@ -1,16 +1,18 @@
-"""Online G1 environment that requires RGB to affect navigation commands."""
+"""Online G1 factory inspection environment and task-level verification."""
 
 from __future__ import annotations
 
 from envs.euler.g1_vision_nav.camera_stream import CameraFrame
 from envs.euler.g1_vision_nav.g1_vision_nav_env import G1VisionNavEnv
-from envs.euler.g1_vision_nav.visual_avoidance import VisualAvoidanceNavigator
+from envs.euler.g1_vision_nav.factory_inspection_navigator import (
+    FactoryInspectionNavigator,
+)
 
 
-class G1VisualAvoidanceEnv(G1VisionNavEnv):
-    """Add visual-intervention telemetry to the point-goal navigation Env."""
+class G1FactoryInspectionEnv(G1VisionNavEnv):
+    """Add RGB intervention and cabinet-arrival telemetry to route navigation."""
 
-    def __init__(self, *args, navigator: VisualAvoidanceNavigator, **kwargs) -> None:
+    def __init__(self, *args, navigator: FactoryInspectionNavigator, **kwargs) -> None:
         self.visual_navigator = navigator
         super().__init__(*args, navigator=navigator, **kwargs)
 

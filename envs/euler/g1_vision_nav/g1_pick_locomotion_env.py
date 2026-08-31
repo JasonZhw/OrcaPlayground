@@ -10,6 +10,17 @@ from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv
 from envs.euler.g1_vision_nav.simulation_gait_clock import SimulationGaitClock
 
 
+def count_actor_actuators(actuator_dict: dict[str, dict], actor_name: str) -> int:
+    """Count controls owned by one Actor without including other Layout robots."""
+    prefix = f"{actor_name}_"
+    return sum(
+        1
+        for actuator_name, actuator_info in actuator_dict.items()
+        if actuator_name.startswith(prefix)
+        or str(actuator_info.get("JointName", "")).startswith(prefix)
+    )
+
+
 class SimulationClockG1Locomotion(G1Locomotion):
     """Run the frozen policy with a gait phase tied to simulation time."""
 
@@ -112,10 +123,14 @@ class G1PickLocomotionEnv(LocomotionEnv):
 
         position_count = int(np.sum(self._position_controlled))
         motor_count = self.NUM_BODY_DOFS - position_count
-        gripper_count = self.model.nu - self.NUM_BODY_DOFS
+        actor_actuator_count = count_actor_actuators(actuator_dict, self.agent_name)
+        actor_auxiliary_count = max(0, actor_actuator_count - self.NUM_BODY_DOFS)
+        scene_other_count = max(0, self.model.nu - actor_actuator_count)
         print(
             "[INFO] g1_pick_usda actuator mapping: "
-            f"position={position_count}, motor={motor_count}, gripper_zero={gripper_count}"
+            f"body_position={position_count}, body_motor={motor_count}, "
+            f"g1_auxiliary_zero={actor_auxiliary_count}, "
+            f"scene_other_zero={scene_other_count}"
         )
 
     def step(self, action: np.ndarray) -> tuple:

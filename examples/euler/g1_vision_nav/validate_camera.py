@@ -48,13 +48,13 @@ def _load_components():
     from online_verifier import OnlineVerifier
 
     from envs.euler.g1_vision_nav.config import DEFAULT_CONFIG
-    from envs.euler.g1_vision_nav.g1_camera_validation_env import (
-        G1CameraValidationEnv,
+    from envs.euler.g1_vision_nav.g1_camera_stream_env import (
+        G1CameraStreamEnv,
     )
 
     return (
         DEFAULT_CONFIG,
-        G1CameraValidationEnv,
+        G1CameraStreamEnv,
         G1_FRAME_SKIP,
         G1_MODEL_XML,
         G1_TIME_STEP,

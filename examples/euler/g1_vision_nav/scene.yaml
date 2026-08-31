@@ -8,7 +8,7 @@ environment:
 
 robot:
   asset_path: assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
-  actor_name: g1_vision_nav
+  actor_name: g1_navi
   spawn_position_xyz: [8.0, 0.463668, 0.0]
   spawn_rotation_wxyz: [1.0, 0.0, 0.0, 0.0]
   exported_camera_count: 0
@@ -30,8 +30,9 @@ navigation:
     left: [[9.0, 3.5], [10.0, 3.5], [13.0, 7.1], [19.2, 4.3]]
     right: [[13.0, -5.0], [19.2, 4.3]]
   cabinet_center_xy: [21.5946, 4.3644]
-  point_goal_status: rebuilt_pending_online_validation
-  visual_avoidance_status: dark_green_yellow_pending_colored_layout
+  point_goal_status: left_route_validated_online
+  visual_avoidance_status: left_route_validated_online
+  right_route_status: planned
   visual_avoidance_scope: rgb_color_occupancy_not_metric_distance
   command_rates_hz:
     physics: 1000

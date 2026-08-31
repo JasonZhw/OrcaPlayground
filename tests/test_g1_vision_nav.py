@@ -20,10 +20,9 @@ from envs.euler.g1_vision_nav.point_goal_navigator import (
 )
 from envs.euler.g1_vision_nav.safety_monitor import NavigationSafetyMonitor
 from envs.euler.g1_vision_nav.simulation_gait_clock import SimulationGaitClock
-from envs.euler.g1_vision_nav.visual_avoidance import (
-    ColorObstacleDetector,
-    GreenWorkbenchDetector,
-    VisualAvoidanceNavigator,
+from envs.euler.g1_vision_nav.factory_inspection_navigator import (
+    FactoryColorObstacleDetector,
+    FactoryInspectionNavigator,
 )
 from envs.euler.g1_vision_nav.waypoint_route import WaypointRoute
 
@@ -138,7 +137,7 @@ def test_point_goal_navigator_reaches_six_tenths_cruise_on_clear_route() -> None
 
 def test_green_workbench_detector_ignores_gray_floor() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    risk = GreenWorkbenchDetector().estimate(rgb)
+    risk = FactoryColorObstacleDetector().estimate(rgb)
     assert risk.risk_fraction == 0.0
     assert not risk.obstacle_visible
 
@@ -148,7 +147,7 @@ def test_color_detector_ignores_dark_hands_and_peripheral_shelving() -> None:
     rgb[:, :30] = np.asarray([25, 25, 25], dtype=np.uint8)
     rgb[:, 60:] = np.asarray([25, 25, 25], dtype=np.uint8)
     rgb[33:, :] = np.asarray([20, 20, 20], dtype=np.uint8)
-    risk = ColorObstacleDetector().estimate(rgb)
+    risk = FactoryColorObstacleDetector().estimate(rgb)
     assert risk.dark_fraction > 0.0
     assert risk.risk_fraction == 0.0
     assert not risk.obstacle_visible
@@ -157,14 +156,14 @@ def test_color_detector_ignores_dark_hands_and_peripheral_shelving() -> None:
 def test_green_workbench_detector_reports_image_regions() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    risk = GreenWorkbenchDetector().estimate(rgb)
+    risk = FactoryColorObstacleDetector().estimate(rgb)
     assert risk.obstacle_visible
     assert risk.right_fraction > risk.left_fraction
     assert risk.center_fraction > 0.0
 
 
 def test_color_detector_recognizes_yellow_and_dark_surfaces() -> None:
-    detector = ColorObstacleDetector()
+    detector = FactoryColorObstacleDetector()
     yellow = np.full((60, 90, 3), 150, dtype=np.uint8)
     yellow[:36, 30:60] = np.asarray([210, 180, 40], dtype=np.uint8)
     yellow_risk = detector.estimate(yellow)
@@ -178,18 +177,18 @@ def test_color_detector_recognizes_yellow_and_dark_surfaces() -> None:
     assert dark_risk.obstacle_visible
 
 
-def test_visual_avoidance_matches_point_goal_on_clear_rgb() -> None:
+def test_factory_navigation_matches_point_goal_on_clear_rgb() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     observation = _observation_with_rgb((2.0, 0.0), rgb)
     baseline = PointGoalNavigator().act(observation)
-    visual = VisualAvoidanceNavigator().act(observation)
+    visual = FactoryInspectionNavigator().act(observation)
     assert visual == baseline
 
 
-def test_visual_avoidance_slows_and_steers_to_clear_side() -> None:
+def test_factory_navigation_slows_and_steers_to_clear_side() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = FactoryInspectionNavigator()
     command = navigator.act(_observation_with_rgb((2.0, 0.0), rgb))
     assert command.walk_enabled
     assert command.forward_mps < navigator.limits.max_forward_mps
@@ -198,16 +197,16 @@ def test_visual_avoidance_slows_and_steers_to_clear_side() -> None:
     assert navigator.intervention_count == 1
 
 
-def test_visual_avoidance_reduces_forward_speed_as_risk_increases() -> None:
+def test_factory_navigation_reduces_forward_speed_as_risk_increases() -> None:
     moderate_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     moderate_rgb[15:18, 30:45] = np.asarray([25, 25, 25], dtype=np.uint8)
     blocked_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     blocked_rgb[15:33, 30:60] = np.asarray([25, 25, 25], dtype=np.uint8)
 
-    moderate = VisualAvoidanceNavigator().act(
+    moderate = FactoryInspectionNavigator().act(
         _observation_with_rgb((2.0, 0.0), moderate_rgb)
     )
-    blocked = VisualAvoidanceNavigator().act(
+    blocked = FactoryInspectionNavigator().act(
         _observation_with_rgb((2.0, 0.0), blocked_rgb)
     )
 
@@ -219,7 +218,7 @@ def test_visual_avoidance_reduces_forward_speed_as_risk_increases() -> None:
 def test_blocked_visual_obstacle_turns_without_reverse() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[15:33, 30:60] = np.asarray([25, 25, 25], dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = FactoryInspectionNavigator()
     command = navigator.act(_observation_with_rgb((2.0, 1.0), rgb))
 
     assert command.walk_enabled
@@ -232,11 +231,11 @@ def test_blocked_visual_obstacle_turns_without_reverse() -> None:
     assert navigator.avoidance_active
 
 
-def test_visual_avoidance_fades_continuously_back_to_path() -> None:
+def test_factory_navigation_fades_continuously_back_to_path() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     obstacle_rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
     clear_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator(
+    navigator = FactoryInspectionNavigator(
         visual=VisualAvoidanceConfig(
             clear_confirmation_steps=3,
             stale_frame_limit_steps=20,
@@ -276,7 +275,7 @@ def test_waypoint_change_preserves_active_avoidance_direction() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     obstacle_rgb[:36, 45:] = np.asarray([70, 145, 130], dtype=np.uint8)
     clear_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = FactoryInspectionNavigator()
 
     previous = navigator.act(
         _observation_with_rgb((2.0, 0.0), obstacle_rgb, frame_index=1)
@@ -300,7 +299,7 @@ def test_waypoint_change_preserves_active_avoidance_direction() -> None:
 def test_collision_recovery_steers_away_from_occupied_image_edge() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
     rgb[15:33, 60:90] = np.asarray([25, 25, 25], dtype=np.uint8)
-    navigator = VisualAvoidanceNavigator()
+    navigator = FactoryInspectionNavigator()
 
     route_command = navigator.act(
         _observation_with_rgb((2.0, -1.0), rgb, frame_index=1)
@@ -317,8 +316,8 @@ def test_collision_recovery_steers_away_from_occupied_image_edge() -> None:
     assert navigator.latest_mode == "collision_escape"
 
 
-def test_visual_avoidance_waits_for_first_rgb_frame() -> None:
-    navigator = VisualAvoidanceNavigator()
+def test_factory_navigation_waits_for_first_rgb_frame() -> None:
+    navigator = FactoryInspectionNavigator()
     command = navigator.act(_observation((3.0, 0.0)))
     assert command == VelocityCommand(walk_enabled=True)
 
