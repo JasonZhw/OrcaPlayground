@@ -50,6 +50,7 @@ class NavigationObservation:
     goal_xy_robot_m: np.ndarray
     base_velocity_xy_mps: np.ndarray
     base_yaw_rate_rps: float
+    base_yaw_world_rad: float
     previous_command: VelocityCommand
     frame_index: int
     sim_time_s: float
@@ -67,6 +68,8 @@ class NavigationObservation:
             raise ValueError("base_velocity_xy_mps must contain two finite values")
         if not np.isfinite(self.base_yaw_rate_rps) or not np.isfinite(self.sim_time_s):
             raise ValueError("yaw rate and simulation time must be finite")
+        if not np.isfinite(self.base_yaw_world_rad):
+            raise ValueError("base_yaw_world_rad must be finite")
         if self.frame_index < 0:
             raise ValueError("frame_index must be non-negative")
 

@@ -1,7 +1,7 @@
 environment:
-  layout_file: /home/jason77/SY/demo1_v1.json
+  layout_file: /home/jason77/SY/green_table.json
   layout_version: "3.0"
-  actor_count: 57
+  actor_count: null  # 以用户保存的 Layout 为准
   green_table_actor: industrial_workbench_1
   green_table_position_xy: [4.7, -5.0]
   walkable_bounds_xy: null
@@ -9,16 +9,16 @@ environment:
 
 robot:
   asset_path: assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
-  actor_name: g1_navi
-  spawn_position_xyz: [4.7, -8.0, 0.0]
-  spawn_rotation_wxyz: [0.707107, 0.0, 0.0, 0.707107]
-  exported_camera_count: 0
+  actor_name: g1
+  loading_mode: existing_layout_actor
+  recommended_position_xyz: [4.7, -7.5, 0.0]
+  recommended_yaw_deg: 90.0  # 在 UI 设置，代码不重定位机器人
   camera_visual_bodies: [head_camera1, head_camera2]
-  camera_sensor_status: studio_component_rgb_validated
+  camera_sensor_status: ui_stream_pending_online_validation
   camera_rgb_ports:
-    camera_head: 7072
-    camera_left: 7071
-    camera_right: 7070
+    camera_head: 7070
+  camera_resolution_hint: [640, 480]  # 以收到帧的实际分辨率为准
+  camera_frame_timeout_s: 1.0
   camera_head_view: steep_downward
   depth_port: null
 
@@ -27,8 +27,8 @@ navigation:
   goal_tolerance_m: 0.35
   episode_timeout_s: 80.0
   collision_geom_names: []
-  point_goal_status: validated_online
-  visual_avoidance_status: validated_online
+  point_goal_status: manual_scene_pending_online_validation
+  visual_avoidance_status: manual_scene_pending_online_validation
   visual_avoidance_scope: industrial_workbench_1_green_pixels
   command_rates_hz:
     physics: 1000
@@ -39,5 +39,4 @@ navigation:
     lateral_mps: 0.08
     yaw_rate_rps: 0.50
   camera_window: orcalab_studio_viewport
-  optional_debug_window: browser_mjpeg
   default_run_steps: 4000

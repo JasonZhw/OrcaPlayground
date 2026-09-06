@@ -1,300 +1,177 @@
-"""Camera-stream lifecycle shared by the online G1 navigation task."""
+"""Receive the head RGB stream enabled by the user in OrcaLab Studio."""
 
 from __future__ import annotations
 
-import os
+import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from envs.euler.g1_vision_nav.camera_preview import CameraPreviewWindow
-from envs.euler.g1_vision_nav.camera_stream import (
-    CameraFrame,
-    CameraNotReadyError,
-    G1CameraStreams,
-)
+from envs.euler.g1_vision_nav.camera_stream import CameraFrame, CameraNotReadyError, G1CameraStreams
 from envs.euler.g1_vision_nav.config import CameraConfig
 from envs.euler.g1_vision_nav.g1_pick_locomotion_env import G1PickLocomotionEnv
 
 
 class G1CameraStreamEnv(G1PickLocomotionEnv):
-    """Activate, consume, verify, preview, and close the head RGB stream."""
+    """Use UI camera settings; own the receiver and any capture started here."""
 
-    FRAME_CHECK_INTERVAL = 25
-    VIDEO_DIR = Path("/tmp/g1_green_table_video")
+    # 只降低状态报告频率；接收与过期判断仍逐个控制周期执行。
+    FRAME_CHECK_INTERVAL = 250
+    CAMERA_WAIT_LOG_INTERVAL = 250
 
     def __init__(
         self,
         *args,
         camera_config: CameraConfig,
         sample_path: Path,
-        show_camera_window: bool = True,
-        camera_window_port: int = 8765,
         **kwargs,
     ) -> None:
         self.camera_config = camera_config
         self.sample_path = sample_path
         self._camera_streams: G1CameraStreams | None = None
         self._first_frame_index = -1
-        self._first_frame_step = -1
-        self._last_frame_index = -1
         self._latest_frame: CameraFrame | None = None
-        self._saving_video = False
-        self._camera_preview = CameraPreviewWindow(
-            enabled=show_camera_window,
-            port=camera_window_port,
-        )
+        self._camera_wait_started = 0.0
+        self._last_camera_wait_log_step: int | None = None
+        self._owns_capture = False
+        self._capture_dir: str | None = None
         super().__init__(*args, **kwargs)
 
+    @property
+    def camera_motion_ready(self) -> bool:
+        """Never navigate from a placeholder or an old decoded image."""
+        return self._latest_frame is not None and self._latest_frame.is_fresh(self.camera_config.frame_timeout_s)
+
     def before_loop(self, verifier) -> None:
-        """Activate Studio RGB capture before the first render cycle."""
-        # Camera Component is owned by Studio rather than MuJoCo (ncam may be
-        # zero). AddActor registration lets these gRPC calls activate the
-        # component and start its WebSocket RGB output on port 7072.
-        camera_count = int(self.model.model_info.get("ncam", 0))
-        verifier.observe(
-            "camera_backend",
-            f"MuJoCo ncam={camera_count}; 继续验证 OrcaLab Studio 侧 Camera Component",
-        )
-        self._activate_camera_viewport(verifier)
-
-        camera = self.camera_config
-        self.locomotion.set_commands(
-            stand=0,
-            lin_vel=(0.0, 0.0),
-            ang_vel=0.0,
-        )
-        self.set_camera_sensor_info(
-            actor_name=self.agent_name,
-            capture_rgb=True,
-            capture_depth=False,
-            save_mp4_file=True,
-            use_dds=False,
-            capture_normal=False,
-            capture_object_color=False,
-            is_recording=True,
-            width=camera.width,
-            height=camera.height,
-            vertical_fov=camera.vertical_fov_deg,
-        )
-
-        os.makedirs(self.VIDEO_DIR, exist_ok=True)
-        self.begin_save_video(str(self.VIDEO_DIR), capture_mode=0)
-        self._saving_video = True
-        sync_frame = self.get_current_frame()
-        verifier.check(
-            "studio_camera_sync_enabled",
-            sync_frame >= 0,
-            sync_frame,
-            ">=0",
-            "Studio CameraSyncManager 已开始产帧",
-        )
-
-        streams = G1CameraStreams(camera)
-        streams.start()
-        self._camera_streams = streams
-        self._camera_preview.start()
+        # 必须先推进仿真/render，再异步等首帧；这里阻塞等图可能导致永远不出帧。
+        # UI 负责相机配置；全局采集是另一个开关，不能随 AddActor 一起删除。
+        self.locomotion.set_commands(stand=0, lin_vel=(0.0, 0.0), ang_vel=0.0)
+        self._first_frame_index = -1
+        self._latest_frame = None
+        self._camera_wait_started = time.monotonic()
+        self._last_camera_wait_log_step = None
+        self._camera_streams = G1CameraStreams(self.camera_config)
+        self._camera_streams.start()
+        self._start_capture(verifier)
         verifier.observe(
             "camera_stream_connecting",
-            f"已启动 camera_head RGB 客户端：port={camera.rgb_port}；控制循环开始 render 后异步等待首帧",
+            f"[相机] 连接端口 {self.camera_config.rgb_port}，等待图像；暂时保持站立。",
+        )
+
+    def _start_capture(self, verifier) -> None:
+        """启动全局采集，但不注册 Actor、不覆盖 UI 参数、不抢占已有录制。"""
+        frame = self.get_current_frame()
+        if frame >= 0:
+            verifier.observe("camera_capture_reused", "[相机] 复用已有采集，退出时保持开启。")
+            return
+        # 独立目录避免覆盖旧录像。先记录所有权，使 RPC 超时后的退出也会尝试清理。
+        self._capture_dir = tempfile.mkdtemp(prefix="g1-green-table-video-")
+        self._owns_capture = True
+        self.begin_save_video(self._capture_dir, capture_mode=0)
+        frame = self.get_current_frame()
+        if frame < 0:
+            raise RuntimeError("全局相机采集未启动（frame=-1）；请检查 OrcaLab 采集日志")
+        verifier.observe(
+            "camera_capture_started",
+            f"[相机] 采集已启动；录像目录：{self._capture_dir}",
         )
 
     def verify_step(self, step: int, verifier) -> None:
-        """Reuse standing checks and periodically verify live RGB progression."""
         super().verify_step(step, verifier)
-        if not self._poll_first_frame(verifier, step=step):
-            return
-        if step == self._first_frame_step:
+        had_frame = self._latest_frame is not None
+        try:
+            frame = self._require_streams().get_rgb()
+        except CameraNotReadyError as exc:
+            self._latest_frame = None
+            if had_frame:
+                self._camera_wait_started = time.monotonic()
+            last_log = self._last_camera_wait_log_step
+            if had_frame or last_log is None or step < last_log or step - last_log >= self.CAMERA_WAIT_LOG_INTERVAL:
+                self._last_camera_wait_log_step = step
+                elapsed = time.monotonic() - self._camera_wait_started
+                hint = ""
+                if elapsed >= self.camera_config.first_frame_timeout_s:
+                    hint = f" 请检查采集、相机开关和端口。详情：{exc}"
+                status = "图像中断" if had_frame else "等待图像"
+                verifier.observe("camera_waiting", f"[相机] {status}，暂停行走。{hint}", step=step)
             return
 
-        frame = self._require_streams().get_rgb()
         self._latest_frame = frame
-        self._camera_preview.show(frame.image, self._camera_preview_lines(frame))
-        if step <= 0 or step % self.FRAME_CHECK_INTERVAL != 0:
-            return
-        verifier.check(
-            f"rgb_frame_increasing_{step}",
-            frame.index > self._last_frame_index,
-            frame.index,
-            f">{self._last_frame_index}",
-            f"RGB 帧号持续增长（step={step}）",
-        )
-        self._last_frame_index = frame.index
+        self._last_camera_wait_log_step = None
+        if self._first_frame_index < 0:
+            self._first_frame_index = frame.index
+            self._check_frame(frame, verifier, "first")
+            verifier.observe(
+                "camera_stream_started",
+                f"[相机] 已收到画面：{frame.image.shape[1]}×{frame.image.shape[0]}，可供导航使用。",
+            )
+        elif not had_frame:
+            verifier.observe(f"camera_stream_recovered_{step}", "[相机] 图像已恢复，可供导航使用。", step=step)
+        if step % self.FRAME_CHECK_INTERVAL == 0:
+            # 控制循环可能比渲染快；新鲜帧允许被重复使用，不要求每步新帧。
+            verifier.check(
+                f"rgb_frame_fresh_{step}", self.camera_motion_ready, frame.index, "未过期图像",
+                "[相机] 图像正常" if self.camera_motion_ready else "[相机] 图像过期",
+            )
 
     def observe_step(self, step: int, verifier) -> None:
-        """Keep this test stationary; locomotion phases belong to the prior test."""
         return None
 
     def after_loop(self, verifier) -> None:
-        """Validate the last frame and save one RGB sample for visual inspection."""
         try:
-            if not self._poll_first_frame(verifier):
-                verifier.check(
-                    "rgb_first_frame_received",
-                    False,
-                    "not received",
-                    f"frame within {self.camera_config.first_frame_timeout_s}s",
-                    "仿真持续渲染后仍未收到 RGB 首帧",
-                )
-                return
-
             frame = self._require_streams().get_rgb()
-            self._latest_frame = frame
-            self._check_frame(frame, verifier, "last")
-            verifier.check(
-                "rgb_stream_progressed",
-                frame.index > self._first_frame_index,
-                frame.index,
-                f">{self._first_frame_index}",
-                "验证期间 RGB 流持续更新",
-            )
-
-            self.sample_path.parent.mkdir(parents=True, exist_ok=True)
-            Image.fromarray(frame.image, mode="RGB").save(self.sample_path)
-            verifier.check(
-                "rgb_sample_saved",
-                self.sample_path.is_file() and self.sample_path.stat().st_size > 100,
-                str(self.sample_path),
-                "non-empty PNG",
-                "保存 RGB 样本",
-            )
-            verifier.observe(
-                "rgb_sample_ready",
-                f"相机样本已保存：{self.sample_path}",
-            )
-        finally:
-            self._stop_video_recording()
+        except CameraNotReadyError as exc:
+            verifier.check("rgb_sample_saved", False, str(exc), "未过期图像", "[相机] 无可用图像，未保存照片。")
+            return
+        self._latest_frame = frame
+        self._check_frame(frame, verifier, "last")
+        verifier.check(
+            "rgb_stream_progressed",
+            frame.index > self._first_frame_index >= 0,
+            frame.index,
+            f">{self._first_frame_index}",
+            "[相机] 结束帧号大于首帧号",
+        )
+        self.sample_path.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(frame.image).save(self.sample_path)
+        verifier.observe("rgb_sample_ready", f"[相机] 照片已保存：{self.sample_path}")
 
     def close(self) -> None:
-        """Stop decoder threads and disable Studio camera capture."""
-        self._camera_preview.close()
-        if self._camera_streams is not None:
-            self._camera_streams.stop()
-            self._camera_streams = None
-        self._stop_video_recording()
+        # 任一清理步骤失败也要继续；只停止自己启动的全局采集，不改 UI 开关。
         try:
-            self.set_camera_sensor_info(
-                actor_name=self.agent_name,
-                capture_rgb=False,
-                capture_depth=False,
-                save_mp4_file=False,
-                use_dds=False,
-                is_recording=False,
-            )
-        except (AttributeError, RuntimeError):
-            pass
-        super().close()
-
-    def _stop_video_recording(self) -> None:
-        if not self._saving_video:
-            return
-        self.stop_save_video()
-        self._saving_video = False
+            if self._camera_streams is not None:
+                self._camera_streams.stop()
+                self._camera_streams = None
+        finally:
+            try:
+                if self._owns_capture:
+                    self.stop_save_video()
+                    self._owns_capture = False
+            finally:
+                super().close()
 
     def _check_frame(self, frame: CameraFrame, verifier, label: str) -> None:
         image = frame.image
-        expected_shape = (
-            self.camera_config.height,
-            self.camera_config.width,
-            3,
-        )
         verifier.check(
             f"rgb_shape_{label}",
-            image.shape == expected_shape,
+            image.ndim == 3 and image.shape[2] == 3 and min(image.shape[:2]) > 0,
             image.shape,
-            expected_shape,
-            f"RGB {label} 帧分辨率",
+            "高×宽×3 通道",
+            "图像尺寸检查",
         )
-        verifier.check(
-            f"rgb_dtype_{label}",
-            image.dtype == np.uint8,
-            str(image.dtype),
-            "uint8",
-            f"RGB {label} 帧数据类型",
-        )
+        verifier.check(f"rgb_dtype_{label}", image.dtype == np.uint8, str(image.dtype), "uint8", "RGB 数据类型")
         dynamic_range = int(image.max()) - int(image.min())
         verifier.check(
             f"rgb_nonempty_{label}",
             dynamic_range >= 10 and float(image.std()) >= 1.0,
             {"dynamic_range": dynamic_range, "std": float(image.std())},
-            "dynamic_range>=10 and std>=1.0",
-            f"RGB {label} 帧不是空白图",
-        )
-
-    def _poll_first_frame(self, verifier, *, step: int | None = None) -> bool:
-        if self._first_frame_index >= 0:
-            return True
-        try:
-            frame = self._require_streams().get_rgb()
-        except CameraNotReadyError:
-            return False
-
-        self._first_frame_index = frame.index
-        self._first_frame_step = -1 if step is None else step
-        self._last_frame_index = frame.index
-        self._latest_frame = frame
-        self._camera_preview.show(frame.image, self._camera_preview_lines(frame))
-        self._check_frame(frame, verifier, "first")
-        verifier.check(
-            "rgb_first_frame_received",
-            frame.index > 0,
-            frame.index,
-            ">0",
-            "RGB WebSocket 已收到首帧",
-        )
-        verifier.observe(
-            "camera_stream_started",
-            f"camera_head RGB 已连接：shape={frame.image.shape}, frame={frame.index}",
-        )
-        return True
-
-    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
-        return [
-            f"{self.agent_name} / {self.camera_config.entity_name}",
-            f"RGB frame: {frame.index}",
-        ]
-
-    def _activate_camera_viewport(self, verifier) -> None:
-        actor_prefix = f"{self.agent_name}_"
-        body_candidates = []
-        for body_name in self.model.get_body_names():
-            if "camera" not in body_name.casefold():
-                continue
-            if body_name.startswith(actor_prefix):
-                body_candidates.append(body_name[len(actor_prefix) :])
-            body_candidates.append(body_name)
-
-        candidates = list(dict.fromkeys([self.camera_config.entity_name, *body_candidates]))
-        errors: list[str] = []
-        for entity_name in candidates:
-            try:
-                self.make_camera_viewport_active(self.agent_name, entity_name)
-            except RuntimeError as exc:
-                errors.append(f"{entity_name}: {exc}")
-                continue
-            verifier.check(
-                "studio_camera_entity_resolved",
-                True,
-                entity_name,
-                "valid Camera Component entity",
-                "Studio 相机实体可激活",
-            )
-            verifier.observe(
-                "camera_viewport_active",
-                f"Studio 视口已切换到 {self.agent_name}/{entity_name}",
-            )
-            return
-
-        verifier.check(
-            "studio_camera_entity_resolved",
-            False,
-            errors,
-            "one valid Camera Component entity",
-            "未能激活固定 G1 的 Studio 相机实体",
+            "色值跨度≥10，标准差≥1",
+            "图像色彩变化检查",
         )
 
     def _require_streams(self) -> G1CameraStreams:
         if self._camera_streams is None:
-            raise RuntimeError("RGB camera streams have not been started")
+            raise CameraNotReadyError("RGB camera receiver has not been started")
         return self._camera_streams

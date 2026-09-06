@@ -24,8 +24,6 @@ class GreenTableRiskEstimate:
     center_fraction: float
     right_fraction: float
     obstacle_visible: bool
-    blocked: bool
-    hard_stop: bool
 
 
 class GreenTableDetector:
@@ -36,14 +34,6 @@ class GreenTableDetector:
 
     def estimate(self, rgb: np.ndarray) -> GreenTableRiskEstimate:
         """Return per-region workbench occupancy, excluding the arm-heavy bottom."""
-        # --------------------------------------------------------------
-        # Perception block
-        # 1. Crop the arm-heavy lower image.
-        # 2. Build a deterministic green/cyan mask in RGB space.
-        # 3. Measure occupancy in left, center, and right image thirds.
-        # Only center occupancy blocks the direct path; side occupancy is
-        # retained to decide which turning direction is clearer.
-        # --------------------------------------------------------------
         image = np.asarray(rgb)
         if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
             raise ValueError("rgb must be an HxWx3 uint8 array")
@@ -65,8 +55,8 @@ class GreenTableDetector:
         center = self._fraction(mask[:, one_third:two_thirds])
         right = self._fraction(mask[:, two_thirds:])
         # Match demo-01: only green in the center third blocks the current
-        # route. Once the table moves to an outer third, target tracking must
-        # regain control even though the table is still visible at the side.
+        # route. Side visibility alone does not block the route; the navigator
+        # confirms clearance before gradually returning to target tracking.
         risk = center
         return GreenTableRiskEstimate(
             risk_fraction=risk,
@@ -74,8 +64,6 @@ class GreenTableDetector:
             center_fraction=center,
             right_fraction=right,
             obstacle_visible=risk >= self.config.slow_risk_fraction,
-            blocked=risk >= self.config.blocked_risk_fraction,
-            hard_stop=risk >= self.config.hard_stop_risk_fraction,
         )
 
     @staticmethod
@@ -107,6 +95,11 @@ class GreenTableNavigator:
         self.maximum_risk_fraction = 0.0
         self._avoidance_side = 0
         self._avoidance_active = False
+        self._last_frame_index: int | None = None
+        self._last_frame_time_s: float | None = None
+        self._clear_elapsed_s = 0.0
+        self._clear_seen = False
+        self._return_elapsed_s: float | None = None
         self.latest_mode = "waiting_rgb"
 
     @property
@@ -126,44 +119,54 @@ class GreenTableNavigator:
         self.maximum_risk_fraction = 0.0
         self._avoidance_side = 0
         self._avoidance_active = False
+        self._last_frame_index = None
+        self._last_frame_time_s = None
+        self._reset_clearance()
         self.latest_mode = "waiting_rgb"
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Follow the goal on clear ground and steer toward the clearer image side."""
-        # --------------------------------------------------------------
-        # Decision block
-        # - Clear center: use the pose-based command unchanged.
-        # - Green enters center: latch the clearer side and turn with a small
-        #   forward gait (the frozen policy turns poorly at exactly vx=0).
-        # - Center clears: immediately return control to point-goal tracking,
-        #   which recomputes the command from the robot's current pose.
-        # --------------------------------------------------------------
         base = self.goal_navigator.act(observation)
         risk = self.detector.estimate(observation.rgb)
         self.latest_base_command = base
         self.latest_risk = risk
         self.maximum_risk_fraction = max(self.maximum_risk_fraction, risk.risk_fraction)
+        frame_dt = self._new_frame_interval(observation)
 
         if not base.walk_enabled:
             self._avoidance_side = 0
             self._avoidance_active = False
+            self._reset_clearance()
             self.latest_mode = "goal_stop"
             return base
 
         if self._avoidance_active:
+            if self._return_elapsed_s is not None and not risk.obstacle_visible:
+                self._return_elapsed_s += frame_dt
+                return self._return_to_target(base)
             if risk.risk_fraction <= self.visual.clear_risk_fraction:
-                self._avoidance_active = False
-                self._avoidance_side = 0
-                self.latest_mode = "follow_target"
-                return base
+                if self._clear_seen:
+                    self._clear_elapsed_s += frame_dt
+                self._clear_seen = True
+                if self._clear_elapsed_s + 1e-9 >= self.visual.clear_confirm_s:
+                    self._return_elapsed_s = 0.0
+                    return self._return_to_target(base)
+                self.latest_mode = "confirm_clear"
+                self.intervention_count += 1
+                return self._clearance_command(base)
+            self._reset_clearance()
         elif risk.obstacle_visible:
             self._avoidance_side = self._choose_clear_side(
                 risk,
                 observation.goal_bearing_rad,
             )
             self._avoidance_active = True
+            self._reset_clearance()
         else:
-            self.latest_mode = "follow_target"
+            self.latest_mode = (
+                "align_goal" if self.goal_navigator.aligning_goal
+                else "follow_target"
+            )
             return base
 
         # The frozen locomotion policy cannot rotate reliably at vx=0. Keep a
@@ -179,6 +182,54 @@ class GreenTableNavigator:
             yaw_rate_rps=float(
                 self._avoidance_side * self.visual.avoidance_yaw_rate_rps
             ),
+            walk_enabled=True,
+        )
+
+    def _reset_clearance(self) -> None:
+        self._clear_elapsed_s = 0.0
+        self._clear_seen = False
+        self._return_elapsed_s = None
+
+    def _new_frame_interval(self, observation: NavigationObservation) -> float:
+        """旧帧不累计时间；断流、帧号回退或仿真时钟回退后重新确认。"""
+        now = observation.sim_time_s
+        elapsed = 0.0 if self._last_frame_time_s is None else now - self._last_frame_time_s
+        rewound = self._last_frame_index is not None and observation.frame_index < self._last_frame_index
+        if elapsed < 0 or elapsed > self.visual.clear_frame_gap_s or rewound:
+            self._reset_clearance()
+            elapsed = 0.0
+        if observation.frame_index == self._last_frame_index:
+            return 0.0
+        self._last_frame_index = observation.frame_index
+        self._last_frame_time_s = now
+        return elapsed
+
+    def _clearance_command(self, base: VelocityCommand) -> VelocityCommand:
+        # 清晰后先停止主动绕圈，而不是继续大角速度旋转；保持低速、不加速。
+        return VelocityCommand(
+            forward_mps=min(self.visual.turn_forward_mps, self.limits.max_forward_mps, base.forward_mps),
+            lateral_mps=0.0,
+            yaw_rate_rps=0.0,
+            walk_enabled=True,
+        )
+
+    def _return_to_target(self, base: VelocityCommand) -> VelocityCommand:
+        """逐渐恢复实时计算的目标指令；新障碍在 act 中优先打断此过程。"""
+        assert self._return_elapsed_s is not None
+        fraction = min(1.0, self._return_elapsed_s / self.visual.return_blend_s)
+        if fraction >= 1.0 - 1e-9:
+            self._avoidance_active = False
+            self._avoidance_side = 0
+            self._reset_clearance()
+            self.latest_mode = "follow_target"
+            return base
+        self.latest_mode = "return_target"
+        self.intervention_count += 1
+        start = self._clearance_command(base)
+        return VelocityCommand(
+            forward_mps=(1.0 - fraction) * start.forward_mps + fraction * base.forward_mps,
+            lateral_mps=fraction * base.lateral_mps,
+            yaw_rate_rps=fraction * base.yaw_rate_rps,
             walk_enabled=True,
         )
 

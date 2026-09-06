@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from envs.euler.g1_vision_nav.camera_stream import CameraFrame
+from envs.euler.g1_vision_nav.camera_stream import CameraNotReadyError
 from envs.euler.g1_vision_nav.command_bridge import (
     CommandLimiter,
     apply_velocity_command,
@@ -35,7 +35,9 @@ from envs.euler.g1_vision_nav.point_goal_navigator import (
 class G1VisionNavEnv(G1CameraStreamEnv):
     """Drive G1 to a world-frame point while keeping the RGB pipeline active."""
 
-    NAVIGATION_LOG_INTERVAL = 50
+    # 摘要约每 2 秒打印；数值检查保持原频率，状态与安全判断仍每个导航周期执行。
+    NAVIGATION_LOG_INTERVAL = 100
+    NAVIGATION_CHECK_INTERVAL = 50
     _SUPPORT_BODY_TOKENS = ("ankle_roll_link", "foot", "toe")
 
     def __init__(
@@ -107,16 +109,21 @@ class G1VisionNavEnv(G1CameraStreamEnv):
         return observation, info
 
     def before_loop(self, verifier) -> None:
-        """Start camera capture and announce the autonomous target."""
+        """Connect to the UI camera stream and announce the target."""
         super().before_loop(verifier)
         verifier.observe(
             "point_goal_navigation",
-            "G1 将先原地站立等待相机，再以低速自动转向并前往目标："
-            f"goal=({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f})",
+            f"[导航准备] 先站立约 {self.navigation_config.startup_stand_s:g} 秒仿真时间，"
+            "收到 RGB 后自动出发。"
+            f"目标坐标=({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f}) 米，"
+            f"终点朝向={self.navigation_config.goal_yaw_deg:+.1f}°"
+            f"（允许误差 ±{self.navigation_config.goal_yaw_tolerance_deg:.1f}°），"
+            f"位置容差={self.navigation_config.goal_tolerance_m:.2f} 米；"
+            + ("碰撞急停已启用" if self.navigation_config.collision_stop else "碰撞急停未启用，仍保留跌倒保护"),
         )
 
     def compute_ctrl(self, step: int) -> np.ndarray:
-        """Update the 10 Hz navigator, then run the frozen 50 Hz ONNX policy."""
+        """Update navigation at its configured rate, then run the 50 Hz policy."""
         # Hierarchical control boundary:
         #   RGB + current pose -> navigation VelocityCommand
         #   VelocityCommand -> frozen G1 locomotion observation
@@ -143,9 +150,9 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             self._minimum_distance_m = distance
         else:
             self._minimum_distance_m = min(self._minimum_distance_m, distance)
-        if distance <= self.navigation_config.goal_tolerance_m:
-            self._goal_reached = True
+        self._goal_reached = self.navigation_config.goal_reached(distance, state["base_yaw_world_rad"])
 
+        was_emergency_stop = self._emergency_stop
         if self._has_fallen(state):
             self._emergency_stop = True
         if self.navigation_config.collision_stop:
@@ -154,32 +161,45 @@ class G1VisionNavEnv(G1CameraStreamEnv):
                 self._unsafe_collision = collision
                 self._emergency_stop = True
 
+        if self._emergency_stop and not was_emergency_stop:
+            reason = self._unsafe_collision or "身体高度或倾角超限，判定为跌倒"
+            verifier.check(
+                f"navigation_emergency_stop_{step}", False, reason, "未触发急停",
+                "[导航急停] 已触发保护；下一控制周期发送停止行走指令，请检查机器人状态后重新运行。",
+            )
+
+        if step % self.NAVIGATION_CHECK_INTERVAL == 0:
+            verifier.check(
+                f"goal_distance_finite_{step}", np.isfinite(distance), distance,
+                "有效数值", f"目标距离检查（第 {step} 步，单位：米）",
+            )
+            verifier.check(
+                f"navigation_safe_{step}", not self._emergency_stop,
+                self._unsafe_collision or ("已触发急停" if self._emergency_stop else "未触发急停"),
+                "未触发已启用的保护", f"导航保护检查（第 {step} 步）",
+            )
+
         if step % self.NAVIGATION_LOG_INTERVAL != 0:
             return
-        verifier.check(
-            f"goal_distance_finite_{step}",
-            np.isfinite(distance),
-            distance,
-            "finite",
-            f"点目标距离（step={step}）",
-        )
-        verifier.check(
-            f"navigation_safe_{step}",
-            not self._emergency_stop,
-            self._unsafe_collision or "safe",
-            "no fall or unsafe collision",
-            f"导航安全状态（step={step}）",
-        )
         command = self.command_limiter.previous
         position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
-        error_world = self.goal_xy_world - position[:2]
+        if self._emergency_stop:
+            status = "急停保护"
+        elif step < self._startup_steps:
+            status = "启动站立"
+        elif not self.camera_motion_ready:
+            status = "等待图像，暂停行走"
+        elif self._goal_reached:
+            status = "位置与朝向已达标"
+        else:
+            status = "导航中"
         verifier.observe(
             f"navigation_state_{step}",
-            f"position=({position[0]:.3f}, {position[1]:.3f}), "
-            f"error_world=({error_world[0]:+.3f}, {error_world[1]:+.3f}), "
-            f"distance={distance:.3f}m, bearing={state['goal_bearing_rad']:.3f}rad, "
-            f"command=({command.forward_mps:.3f}, {command.lateral_mps:.3f}, "
-            f"{command.yaw_rate_rps:.3f})",
+            f"[导航] {status}｜第 {step} 步｜位置=({position[0]:.2f}, {position[1]:.2f}) 米｜"
+            f"距目标={distance:.2f} 米｜朝向={math.degrees(state['base_yaw_world_rad']):+.1f}°｜"
+            f"终点朝向误差={math.degrees(self.navigation_config.heading_error_rad(state['base_yaw_world_rad'])):+.1f}°\n"
+            f"    下发指令：前进(vx)={command.forward_mps:.2f} m/s，"
+            f"侧移(vy)={command.lateral_mps:.2f} m/s，转向={command.yaw_rate_rps:+.2f} rad/s（正左负右）",
             step=step,
         )
 
@@ -190,16 +210,21 @@ class G1VisionNavEnv(G1CameraStreamEnv):
     def after_loop(self, verifier) -> None:
         """Save the last RGB sample and report the final point-goal state."""
         super().after_loop(verifier)
-        distance = self._goal_distance_m()
+        state = self._read_planar_state()
+        distance = float(np.linalg.norm(state["goal_xy_robot_m"]))
         minimum_distance = min(self._minimum_distance_m, distance)
+        reached = self.navigation_config.goal_reached(distance, state["base_yaw_world_rad"])
         verifier.observe(
             "point_goal_final_state",
-            f"目标导航结束：final_distance={distance:.3f}m, minimum_distance={minimum_distance:.3f}m",
+            f"[导航结束] 到达判定：{'已达标' if reached else '未达标'}｜"
+            f"最终距离={distance:.2f} 米｜过程最近距离={minimum_distance:.2f} 米｜"
+            f"终点朝向误差={math.degrees(self.navigation_config.heading_error_rad(state['base_yaw_world_rad'])):+.1f}°",
         )
 
     def verify_final(self, verifier) -> None:
         """Require measurable progress, goal arrival, RGB, and no safety stop."""
-        final_distance = self._goal_distance_m()
+        state = self._read_planar_state()
+        final_distance = float(np.linalg.norm(state["goal_xy_robot_m"]))
         initial_distance = self._initial_distance_m
         minimum_distance = min(self._minimum_distance_m, final_distance)
         progress = 0.0 if initial_distance is None else initial_distance - minimum_distance
@@ -208,80 +233,68 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             "point_goal_progress",
             progress >= required_progress,
             progress,
-            f">={required_progress:.3f}",
+            f"至少靠近目标 {required_progress:.2f} 米",
             "G1 朝目标产生有效位移",
         )
         verifier.check(
             "point_goal_reached",
-            final_distance <= self.navigation_config.goal_tolerance_m,
-            final_distance,
-            f"<={self.navigation_config.goal_tolerance_m}",
-            "G1 到达目标容差范围并停止",
+            self.navigation_config.goal_reached(final_distance, state["base_yaw_world_rad"]),
+            {"distance_m": final_distance, "yaw_error_deg": math.degrees(
+                self.navigation_config.heading_error_rad(state["base_yaw_world_rad"]))},
+            f"距离不超过 {self.navigation_config.goal_tolerance_m:.2f} 米，且"
+            f"朝向误差不超过 {self.navigation_config.goal_yaw_tolerance_deg:.1f}°",
+            "G1 到达目标位置且朝向符合要求",
         )
         verifier.check(
             "navigation_no_emergency_stop",
             not self._emergency_stop,
-            self._unsafe_collision or "safe",
-            "safe",
-            "导航期间未跌倒且未发生非足部环境碰撞",
+            self._unsafe_collision or ("已触发急停" if self._emergency_stop else "未触发急停"),
+            "未触发已启用的保护",
+            "导航保护结果；" + (
+                "跌倒与碰撞急停均已启用"
+                if self.navigation_config.collision_stop else "碰撞急停未启用，本项不证明全程无碰撞"
+            ),
         )
         verifier.check(
             "navigation_rgb_available",
             self._latest_frame is not None,
             None if self._latest_frame is None else self._latest_frame.index,
-            "camera frame index",
-            "导航环境同步获得 7072 RGB",
+            "已接收 RGB 图像（实际值为帧号）",
+            f"导航环境获得 {self.camera_config.rgb_port} RGB",
         )
 
     def _requested_command(self, step: int) -> VelocityCommand:
-        if step < self._startup_steps or self._goal_reached or self._emergency_stop:
+        if step < self._startup_steps or self._emergency_stop:
+            return VelocityCommand.stopped()
+        if not self.camera_motion_ready:
             return VelocityCommand.stopped()
 
         observation = self._build_navigation_observation()
         self._latest_navigation_observation = observation
-        if observation.goal_distance_m <= self.navigation_config.goal_tolerance_m:
-            self._goal_reached = True
-            return VelocityCommand.stopped()
-        return self.navigator.act(observation)
+        self._goal_reached = self.navigation_config.goal_reached(
+            observation.goal_distance_m, observation.base_yaw_world_rad,
+        )
+        # 让导航器也收到达标位姿，保留末端状态；轻微朝向漂移后继续
+        # 对齐身体，而不是因环境提前 return 导致又去追逐目标坐标。
+        requested = self.navigator.act(observation)
+        return VelocityCommand.stopped() if self._goal_reached else requested
 
     def _build_navigation_observation(self) -> NavigationObservation:
         state = self._read_planar_state()
         if self._latest_frame is None:
-            rgb = np.zeros(
-                (self.camera_config.height, self.camera_config.width, 3),
-                dtype=np.uint8,
-            )
-            frame_index = 0
-        else:
-            rgb = self._latest_frame.image
-            frame_index = self._latest_frame.index
+            raise CameraNotReadyError("navigation requires a real RGB frame")
+        rgb = self._latest_frame.image
+        frame_index = self._latest_frame.index
         return NavigationObservation(
             rgb=rgb,
             goal_xy_robot_m=state["goal_xy_robot_m"],
             base_velocity_xy_mps=state["base_velocity_xy_mps"],
             base_yaw_rate_rps=state["base_yaw_rate_rps"],
+            base_yaw_world_rad=state["base_yaw_world_rad"],
             previous_command=self.command_limiter.previous,
             frame_index=frame_index,
             sim_time_s=float(self.data.time),
         )
-
-    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
-        lines = super()._camera_preview_lines(frame)
-        observation = self._latest_navigation_observation
-        command = self.command_limiter.previous
-        state = self._read_planar_state()
-        position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
-        distance = "waiting" if observation is None else f"{observation.goal_distance_m:.2f} m"
-        bearing = "waiting" if observation is None else f"{observation.goal_bearing_rad:+.2f} rad"
-        lines.extend(
-            (
-                f"Position: ({position[0]:.2f}, {position[1]:.2f})",
-                f"Goal: ({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f}) | distance={distance}",
-                f"Bearing: {bearing}",
-                f"Command: vx={command.forward_mps:.2f} vy={command.lateral_mps:.2f} yaw={command.yaw_rate_rps:.2f}",
-            )
-        )
-        return lines
 
     def _read_planar_state(self) -> dict[str, np.ndarray | float]:
         pelvis_name = f"{self.agent_name}_pelvis"
@@ -306,6 +319,7 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             "goal_bearing_rad": float(np.arctan2(goal_robot[1], goal_robot[0])),
             "base_velocity_xy_mps": linear_velocity_body[:2].astype(np.float32),
             "base_yaw_rate_rps": float(angular_velocity_body[2]),
+            "base_yaw_world_rad": float(np.arctan2(xmat[1, 0], xmat[0, 0])),
             "pitch_rad": pitch,
             "roll_rad": roll,
         }
@@ -341,12 +355,13 @@ class G1VisionNavEnv(G1CameraStreamEnv):
         return None
 
     def _compute_reward(self, obs: dict, action: np.ndarray) -> float:
-        distance = self._goal_distance_m()
+        state = self._read_planar_state()
+        distance = float(np.linalg.norm(state["goal_xy_robot_m"]))
         previous_distance = self._reward_previous_distance_m
         progress = 0.0 if previous_distance is None else previous_distance - distance
         self._reward_previous_distance_m = distance
         reward = 10.0 * progress - 0.002
-        if distance <= self.navigation_config.goal_tolerance_m and not self._goal_bonus_awarded:
+        if self.navigation_config.goal_reached(distance, state["base_yaw_world_rad"]) and not self._goal_bonus_awarded:
             reward += 5.0
             self._goal_bonus_awarded = True
         if self._unsafe_collision is not None:

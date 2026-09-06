@@ -38,10 +38,16 @@ class PointGoalNavigator:
     ) -> None:
         self.navigation = navigation or NavigationConfig()
         self.limits = limits or CommandLimits()
+        self._aligning_goal = False
+
+    @property
+    def aligning_goal(self) -> bool:
+        """终点区域内优先保持朝向调整，而不是反复追逐坐标。"""
+        return self._aligning_goal
 
     def reset(self) -> None:
-        """The proportional baseline has no recurrent state."""
-        return None
+        """Clear the terminal heading latch at the beginning of an episode."""
+        self._aligning_goal = False
 
     def act(self, observation: NavigationObservation) -> VelocityCommand:
         """Return a body-frame command for the current relative goal."""
@@ -53,8 +59,26 @@ class PointGoalNavigator:
         # cycle; it is not a prerecorded vx/vy sequence.
         # --------------------------------------------------------------
         distance = observation.goal_distance_m
-        if distance <= self.navigation.goal_tolerance_m:
+        if self.navigation.goal_reached(distance, observation.base_yaw_world_rad):
+            self._aligning_goal = True
             return VelocityCommand.stopped()
+        if distance <= self.navigation.goal_alignment_radius_m:
+            self._aligning_goal = True
+        elif distance > self.navigation.goal_tolerance_m:
+            self._aligning_goal = False
+        if self._aligning_goal:
+            # 用不同的进入/退出半径留出转身空间。0.8–1 m 间保持已进入的朝向调整，不再因小幅漂移切回点跟随；超过 1 m 才重新靠近。
+            # 保留低速步态，避免冻结策略在 vx=0 时难以转身。
+            error = self.navigation.heading_error_rad(observation.base_yaw_world_rad)
+            rate = min(self.limits.max_yaw_rate_rps, max(
+                self.navigation.goal_turn_min_rate_rps,
+                self.navigation.bearing_gain * abs(error),
+            ))
+            return VelocityCommand(
+                forward_mps=min(self.navigation.minimum_forward_mps, self.limits.max_forward_mps),
+                yaw_rate_rps=float(np.copysign(rate, error)),
+                walk_enabled=True,
+            )
 
         bearing = observation.goal_bearing_rad
         yaw_rate = float(
@@ -94,11 +118,11 @@ class PointGoalNavigator:
         if distance < self.navigation.slowdown_radius_m:
             slowdown_span = (
                 self.navigation.slowdown_radius_m
-                - self.navigation.goal_tolerance_m
+                - self.navigation.goal_alignment_radius_m
             )
             speed_fraction = float(
                 np.clip(
-                    (distance - self.navigation.goal_tolerance_m) / slowdown_span,
+                    (distance - self.navigation.goal_alignment_radius_m) / slowdown_span,
                     0.0,
                     1.0,
                 )
@@ -109,8 +133,6 @@ class PointGoalNavigator:
         forward *= max(0.0, float(np.cos(bearing)))
         return VelocityCommand(
             forward_mps=float(forward),
-            # As in demo-01, path following uses forward+yaw. Lateral motion is
-            # reserved for the temporary visual clearance correction.
             lateral_mps=0.0,
             yaw_rate_rps=yaw_rate,
             walk_enabled=True,

@@ -79,13 +79,7 @@ class G1PickLocomotionEnv(LocomotionEnv):
         self._position_kp = np.asarray(position_kp, dtype=np.float64)
         self._position_kd = np.asarray(position_kd, dtype=np.float64)
 
-        position_count = int(np.sum(self._position_controlled))
-        motor_count = self.NUM_BODY_DOFS - position_count
-        gripper_count = self.model.nu - self.NUM_BODY_DOFS
-        print(
-            "[INFO] g1_pick_usda actuator mapping: "
-            f"position={position_count}, motor={motor_count}, gripper_zero={gripper_count}"
-        )
+        print(f"[机器人] {self.NUM_BODY_DOFS} 个本体关节执行器匹配完成")
 
     def step(self, action: np.ndarray) -> tuple:
         """Step with a 29-D policy target while the MuJoCo model has 45 controls."""
