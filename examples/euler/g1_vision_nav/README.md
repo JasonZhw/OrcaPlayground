@@ -1,6 +1,6 @@
 # ORCA Lab 实训教案：从 Layout 搭建到 G1 视觉巡检
 
-> 课程状态：绿色桌子最小闭环和工厂左线巡检已经完成在线验证；工厂右线作为后续扩展。
+> 当前改动：factory 控制 Layout 中的 `g1`，读取 UI 内置 RGB 做导航、拍照和网页第一视角；网页不自动弹窗，本 Demo 不连接深度流。原 AddActor 版左线已在线验证；右线仍为后续扩展。
 
 ## 一、实训目标与两个阶段
 
@@ -23,13 +23,13 @@ ORCA Lab Layout
 环境、灯光、桌子、货架、电气柜
                │
                ▼
-代码通过 AddActor 生成 g1_navi
-并注册 Studio Camera Component
+Layout 手动放置 g1
+UI 开启头部相机视频流
                │
         ┌──────┴──────┐
         ▼             ▼
 camera_head RGB    G1 实时位姿
-WebSocket 7072     gRPC 50051
+WebSocket 7070     gRPC 50051
         └──────┬──────┘
                ▼
 视觉导航上层：目标跟随 + RGB 近场避障
@@ -59,7 +59,7 @@ G1 行走、到达巡检点并保存 RGB 照片
 完成实训后，学员应能够：
 
 1. 在 ORCA Lab 中新建并保存一个可运行的 Layout；
-2. 解释为什么本课程的带相机 G1 由代码通过 `AddActor` 生成；
+2. 理解 UI 相机配置、全局采集与 Python 接收图像的区别；
 3. 理解 gRPC 控制端口和 RGB WebSocket 端口的不同职责；
 4. 复用官方 Lesson 7 的 G1 ONNX 运控模型；
 5. 理解 29 个策略关节如何适配到 G1 Pick 的混合执行器；
@@ -94,10 +94,10 @@ cd /home/jason77/SY/OrcaPlayground
 assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda
 ```
 
-代码生成的 Actor 统一命名为：
+在 Layout 中手动放置机器人，将 Actor 命名为：
 
 ```text
-g1_navi
+g1
 ```
 
 Asset、Actor 和 Layout 的基础概念已在入门文档中讲解，本篇只记录当前 Demo 使用的
@@ -128,111 +128,50 @@ Asset、Actor 和 Layout 的基础概念已在入门文档中讲解，本篇只�
 
 ```text
 /home/jason77/SY/demo1_v1.json   # 绿色桌子最小闭环
-/home/jason77/SY/demo_v2.json    # 工厂巡检场景
+/home/jason77/SY/factory_navi.json    # 工厂巡检场景
 ```
 
-### 2.2 环境和机器人分开加载
+### 2.2 在 Layout 中放置 G1
 
-环境物体仍然由学员在 UI 中摆放，但本课程控制的 G1 不保存在 Layout 中，而是由
-Python 通过 `OrcaGymScene.add_actor()` 和 `publish_scene()` 生成。
+环境和机器人都由用户在 UI 中放置。机器人使用上面的固定 G1 资产，Actor 名称为 `g1`。
+本轮以用户指定的导航平面起点 `(8.0, 0.0)`、yaw `0°` 规划。
+保存的 JSON 曾包含旧起点 `(6.86, 0.10)`，请在 UI 确认已改为 `(8, 0)`；程序不重置出生位置。
 
-```text
-手动 Layout：地面、桌子、货架、电气柜等环境
-                         +
-Python AddActor：本课程控制的 g1_navi
-```
+代码不再通过 AddActor 生成、删除或移动机器人，也不重新发布 Layout。
+`--layout` 仅用于显示场景路径，实际运行的是 UI 当前打开的场景。
+修改 Actor 名后请保存并重新加载 Layout，确保运行时关节前缀同步。
 
-这样设计的主要原因不是普通关节控制，而是 Studio 相机流的注册方式。
+## 三、内置视频流与网页预览
 
-## 三、为什么带相机的 G1 要通过 AddActor 加载
+在 UI 中选中 G1 **头部**相机，配置 ColorCamera、Enable、IsRecording，
+ColorPort 设为 `7070`，确保没有其他相机使用同一输出端口。
+本 Demo 不需要开启 DepthCamera，也不连接 `7071` 深度端口。
+建议分辨率 640×480。代码不调用 `SetCameraSensorInfo`，
+也不调用 `MakeCameraViewportActive`，不会覆盖 UI 参数或切换你的视角。
 
-这里最容易混淆的是：**把 G1 手动放进 Layout 后，ORCA Lab 确实可以看到它，也可以在
-界面中切换到它的第一视角。**这说明资产包含相机组件，而且 ORCA Lab 自己能够渲染该
-相机，但不代表外部 Python 控制程序已经能够按 Actor 名称绑定并接收这路 RGB 数据。
+“UI 能看到第一视角”和“Python 能收到视频”是两件事：
+前者是本地渲染；后者需要相机输出和全局采集同时工作。
 
-这实际上是两条不同的相机使用链路：
+程序先检查全局采集：已经开启就复用；尚未开启时通过官方
+`begin_save_video(..., capture_mode=0)` 启动。
+此时会在独立的 `/tmp/g1-factory-video-*` 目录产生录像，路径打印在终端。
+退出只停止程序自己启动的采集，不关闭用户已有的采集或 UI 相机开关。
+这些录像不会自动删除，运行多次后可以自行清理不需要的录像。
 
-```text
-ORCA Lab 界面显示第一视角
-    └── Studio 内部直接使用 Camera Component 渲染
+只接收一份 RGB（7070），同时供颜色避障、巡检拍照和网页第一视角使用。
+网页叠加位置、路径点、指令和安全状态；保存的巡检照片仍为不带文字的原始 RGB。
+OrcaLab 内仍可同时查看相机第一视角。深度不参与本 Demo 的显示或运动指令计算。
 
-Python 导航程序读取 RGB
-    └── SetCameraSensorInfo 按 Actor 名查找相机
-        └── CameraCaptureComponent 产帧
-            └── WebSocket 7072 把 RGB 发送给控制程序
-```
+默认开启网页服务，但不自动打开浏览器。启动后手动访问终端打印的地址，
+通常是 `http://127.0.0.1:8765`。端口被占用时会换用空闲端口。
+`--no-camera-window` 仅关闭网页，不关闭导航所需 RGB，也不改 UI 相机开关。
+网页关闭或刷新不会停止导航；无新鲜 RGB 时机器人暂停行走，恢复后继续。
+RGB 断流时网页显示等待提示，不把旧帧伪装为实时视频。
 
-因此，手动放入 Layout 的 G1 可以被看见，也可以进行关节和运控控制；我们遇到的问题是：
-在当前 Euler + Studio Camera API 链路中，Python 程序无法找到这个手动 Actor 对应的相机
-实体，因而收不到导航所需的 RGB 帧。
-
-官方 Euler Lesson 8 对这个现象给出了原因。Euler 环境后续使用 `LoadLocalEnv`，这条路径
-不会填充 Studio 端用于相机查找的 `m_spawnedEntities`。因此，ORCA Lab 界面虽然能显示
-第一视角，Python 调用 `SetCameraSensorInfo` 时仍可能得到 `Camera actor name not found`。
-
-```text
-手动把 G1 放入 Layout
-        ├── ORCA Lab 显示第一视角：可以
-        ├── Python 控制 G1 关节：可以匹配时可以
-        └── Python 按 Actor 名绑定 RGB：当前链路失败
-```
-
-Lesson 8 因此先让机器人走 AddActor 路径：
-
-```text
-OrcaGymScene.add_actor
-        ↓
-OrcaGymScene.publish_scene
-        ↓
-Studio AddActor 创建 G1
-        ↓
-填充 m_spawnedEntities
-        ↓
-激活 CameraCaptureComponent
-        ↓
-EulerEnv LoadLocalEnv 导出 MJCF 并进行控制
-```
-
-经过 AddActor 后，Studio 会把机器人登记到 `m_spawnedEntities`，程序才能按 `g1_navi`
-找到相机、激活 `CameraCaptureComponent`，并从 7072 获得连续 RGB 帧：
-
-```text
-Python AddActor 生成 G1
-        ├── ORCA Lab 显示第一视角：可以
-        ├── Python 控制 G1 关节：可以
-        └── Python 按 Actor 名绑定 RGB：可以
-```
-
-所以我们选择 AddActor，并不是因为手动 G1 没有摄像头，也不是因为它完全不能控制，而是
-因为本 Demo 的避障算法必须在 Python 中拿到每一帧 RGB。若只有 ORCA Lab 界面能看到画面，
-程序却收不到像素数据，就无法计算绿色、黄色和深色区域占比，也无法让视觉信息改变运动
-指令。
-
-官方 Lesson 8 使用的是空关卡；本课程在此基础上做了一层工程适配：环境、桌子和电气柜
-继续保留在手动打开的 Layout 中，Python 只发布机器人 Actor。核心代码等价于：
-
-```python
-scene = OrcaGymScene(grpc_addr=grpc_addr)
-scene.add_actor(
-    Actor(
-        name="g1_navi",
-        asset_path="assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
-        position=np.asarray((8.0, 0.463668, 0.0)),
-        rotation=np.asarray((1.0, 0.0, 0.0, 0.0)),
-        scale=1.0,
-    )
-)
-scene.publish_scene()
-```
-
-也就是说，官方依据解释的是“为什么相机机器人要经过 AddActor”；“保留手动 Layout、
-只发布 G1”则是本 Demo 在官方机制上做的组合方式。
-
-官方依据：
-
-- [OrcaPlayground Euler Lesson 8 文档](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/euler/08_video_capture/08_video_capture.md)
-- [OrcaPlayground Euler Lesson 8 代码](https://github.com/openverse-orca/OrcaPlayground/blob/main/examples/euler/08_video_capture/video_capture.py)
-- 本地对应文件：`examples/euler/08_video_capture/08_video_capture.md`
+这里使用绿色桌子分支已验证的 UI 接流方案，不再依赖 AddActor 注册相机。
+本目录只保留工厂正式入口 `run_factory_navi.py` 和本 README。
+路线与启动参数以入口为准，导航和相机参数以 `envs/euler/g1_vision_nav/config.py` 为准，
+不再单独维护一份场景 YAML 配置。
 
 ## 四、正确启动 ORCA Lab
 
@@ -259,16 +198,16 @@ ORCA Lab 打开对应 Layout
 在终端启动 Python Demo
 ```
 
-## 五、三条通信链路
+## 五、通信链路
 
 | 地址 | 用途 | 通俗理解 |
 | --- | --- | --- |
 | `localhost:50051` | OrcaGym 与 ORCA Lab 的 gRPC 控制 | Python 与仿真平台之间的“控制电话” |
-| `localhost:7072` | `camera_head` RGB WebSocket | 相机持续发送图像的“视频频道” |
-| `localhost:8765` | 可选浏览器调试页面 | 把 7072 图像和导航状态转给浏览器查看 |
+| `localhost:7070` | `camera_head` RGB WebSocket | 相机持续发送图像的“视频频道” |
+| `localhost:8765` | 可选浏览器调试页面 | 把 7070 RGB 第一视角和导航状态转给浏览器查看 |
 
-ORCA Lab 可以直接显示 G1 第一视角，因此 8765 默认关闭。关闭浏览器窗口不会影响导航，
-而 7072 图像流中断会让视觉导航进入等待或安全停止逻辑。
+ORCA Lab 与网页可以同时显示第一视角。8765 服务默认开启但不弹窗；关闭浏览器不会影响导航，
+而 7070 图像流中断会让视觉导航进入等待或安全停止逻辑。
 
 ## 六、我们直接复用的底层运控
 
@@ -364,21 +303,21 @@ g1_pick_usda 自身执行器
 ```
 
 场景中还可能有其他带执行器的机器人。它们属于整个 MuJoCo 模型的全局 `nu`，不能
-误算成 G1 的夹爪数量。代码按 `g1_navi_` Actor 前缀区分 G1 与场景其他执行器。
+误算成 G1 的夹爪数量。代码按 `g1_` Actor 前缀区分 G1 与场景其他执行器。
 
 ### 7.2 名称对齐
 
 `g1_pick_locomotion_env.py` 按 29 个关节全名寻找执行器，并要求每个关节恰好匹配一个：
 
 ```text
-g1_navi_left_hip_pitch_joint
-g1_navi_left_hip_roll_joint
+g1_left_hip_pitch_joint
+g1_left_hip_roll_joint
 ...
-g1_navi_right_wrist_yaw_joint
+g1_right_wrist_yaw_joint
 ```
 
 如果 Actor 名称不同，运行时关节前缀也会不同。因此 Actor 名、`agent_names` 和关节前缀
-必须一致。这也是项目把机器人 Actor 统一命名为 `g1_navi` 的原因。
+必须一致。这也是项目把机器人 Actor 统一命名为 `g1` 的原因。
 
 ### 7.3 混合执行器转换
 
@@ -453,8 +392,8 @@ python examples/euler/g1_vision_nav/run_green_table_crossing.py
 固定条件：
 
 ```text
-Layout: demo1_v1.json
-G1 出生点: (4.7, -8.0)
+Layout: green_table.json
+G1 手动起点: (4.7, -7.5)
 绿色桌子: 约 (4.7, -5.0)
 目标点: (4.7, 0.0)
 ```
@@ -464,11 +403,11 @@ G1 出生点: (4.7, -8.0)
 逻辑：
 
 1. 点目标控制器实时计算前往 `(4.7, 0.0)` 的速度；
-2. 7072 RGB 的中央区域出现足够多绿色像素；
+2. 7070 RGB 的中央区域出现足够多绿色像素；
 3. 控制器选择画面较空的一侧；
 4. 以小前进速度配合 yaw 绕开桌子；
-5. 中央区域清空后，立即用当前位置重新计算目标指令；
-6. 进入目标半径后停止。
+5. 连续清晰确认后，逐渐恢复基于当前位置的目标转向；
+6. 到达终点附近后调整朝向，再停止。具体参数以绿色桌子分支为准。
 
 这个 Demo 的教学价值是让学员先看懂最小闭环：
 
@@ -496,36 +435,109 @@ git switch demo1-v1-factory-navi
 正式入口：
 
 ```bash
-python examples/euler/g1_vision_nav/run_factory_inspection.py --route left
+python examples/euler/g1_vision_nav/run_factory_navi.py
 ```
 
 固定条件：
 
 ```text
-Layout: demo_v2.json
-G1 出生点: (8.0, 0.463668)
-最终巡检点: (19.2, 4.3)
+Layout: factory_navi.json
+G1 导航平面起点: (8.0, 0.0)，yaw=0°，Actor=g1
+最终巡检点: (20.0, 3.8)
 
 左线:
-(9.0, 3.5) → (10.0, 3.5) → (13.0, 7.1) → (19.2, 4.3)
+(9.0, 3.5) → (10.0, 3.5) → (12.6, 7.5) → (14.5, 7.8) → (20.0, 3.8)
 ```
 
 逻辑：
 
 1. `WaypointRoute` 选择当前 waypoint；
-2. `PointGoalNavigator` 根据实时位置和 yaw 生成主路径指令；
-3. `FactoryColorObstacleDetector` 读取 7072 RGB；
-4. 中央出现深色、绿色或黄色近场区域时，视觉层减速并修正侧移/yaw；
-5. 连续清晰 10 帧后，修正量逐步降为零；
+2. `WaypointRoute.current_goal` 给出当前待到达的路径点，`PointGoalNavigator` 根据实时平面位置和 yaw 直接生成指向它的指令；按顺序到点后切换，不按几何距离跳选其他点，也不追踪线段前视点；
+3. `FactoryColorObstacleDetector` 把 7070 RGB 转为 HSV，在画面高度 25%～55% 的区域筛选红/黄/绿/蓝色。OpenCV 的饱和度 S、亮度 V 范围均为 0～255，默认要求 S≥80、V≥50，排除低饱和度灰地板、灰色阴影和接近黑色的噪声。此方案只适合本 Demo 的彩色障碍：黑、灰、白障碍可能漏检，彩色地面标线可能误报，不具备通用距离避障能力；
+4. 中央彩色占比达到 8%、未到 20% 时，只限制前进速度，完整保留目标转向和侧移指令，也不启动新的避障方向锁。达到 20% 才优先朝已选定的避障方向转动。避障前进速度不超过当前点目标指令；
+5. 强避障后，中央彩色占比降到 4% 或以下开始清晰确认；确认期间允许波动到 6%，超过 6% 中断确认并重新按轻度/强风险处理。新鲜帧确认 0.55 秒后，用 1 秒逐渐恢复实时目标转向。重复帧不增加确认时间，帧间隔超过 0.35 秒或仿真时间回退后重新确认。只有轻度风险时不经历这段等待；
 6. 中间 waypoint 进入 `0.40m` 到达圆即可切换；
 7. 如果轻微越过中间点，但仍在 `0.40m` 路径走廊内，也允许进入下一段；
-8. 最终巡检点不使用越过判定，必须进入 `0.20m` 半径；
-9. 到达后停止，并把最后一帧保存到 `/tmp/g1_cabinet_left_rgb.png`。
+8. 最终巡检点不使用越过判定，必须进入 `0.38m` 半径；
+9. 路线完成后先站立停稳，再检查画面；有合格蓝色区域就保持静止确认并拍照，没有才慢速旋转，具体规则见下节。
 
-左线已经在线验证并完成视频录制。右线命令为：
+### 10.1 终点蓝色仪表盘拍照
+
+把柜子的蓝色面板朝向停车点，并先在 **G1 头部 RGB 第一视角**确认能够看到蓝色面板。
+第三人称看得到，并不意味着俯视较大的头部相机也看得到；本程序不会修改相机俯仰或 FOV。
+
+路线先到 `(20.0, 3.8)` 的 0.38m 范围，再启动取景。此后不再追逐停车点，也不再用
+途中的彩色避障来拒绝蓝色仪表盘；前进/侧移请求均为零，保留碰撞、跌倒和断流保护。
+第一次进入取景必先发送站立指令，并等待测得的运动速度与平滑后指令均降到停稳阈值。
+有合格蓝色候选时不旋转，不要求蓝色居中，也不要求机器人朝向预设角度。
+没有蓝色候选时，以 0.30 rad/s 沿选定方向旋转寻找；方向只根据柜子位置选择一次，
+不执行反复左右扫描。取景期间距终点超过 0.43m 就停止继续旋转，但仍可检查当前图像并静止拍照。
+38 cm 的到点判定只完成一次，之后转向微漂移不会取消已到达状态，也不会触发重新追点。
+这些是代码判定阈值，实际停车精度仍需在当前场景实跑确认。
+
+参数位于 `envs/euler/g1_vision_nav/config.py` 的 `BluePanelInspectionConfig`：
+
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `cabinet_xy` | `(21.59, 4.36)` | 柜子大致位置，仅决定首次搜索转向；柜子移动后需同步修改 |
+| `blue_min_fraction` | `0.05` | 最大蓝色连通块至少占检测区域 5% |
+| `stable_s` | `0.0` | 停稳后当前有效帧合格即拍，不额外等待；可设置正数做连续确认 |
+| `timeout_s` | `15` | 到点后最多取景 15 秒仿真时间，超时保持站立并报告未拍照 |
+| `station_radius_m` | `0.43` | 超出此距离就停止旋转，不禁止静止拍照 |
+
+检测区域为图宽 10%～90%、图高 5%～85%。RGB 转 HSV 后取 H=95～130、S≥90、V≥45，
+再检查最大蓝色连通块占比在 5%～60% 之间，排除零碎小点和几乎填满视野的单色近景；不再额外限制形状或居中。
+这是本场景的**颜色标记启发式**，不是真正的仪表盘识别；画面里的其他大块蓝色物体仍可能误判。
+终端只用「电气柜」描述任务，不展示颜色占比、水平偏差或取景中间过程；底层仍是颜色检测，并非语义识别。
+
+蓝色在画面左侧或右侧都可以，检测合格就停止旋转。蓝色消失或不合格则重新搜索，
+但不重置 15 秒总时限，已因漂移停止旋转时不再启动运动。
+实际水平速度 ≤0.08m/s、转速 ≤0.10rad/s，且平滑后的运动指令基本归零，才允许拍照。
+只检查新鲜新帧，不能拿上次日志中的比例或旧图补拍。设置正数 `stable_s` 时，重复帧不累计确认时间，
+帧间隔超过 0.35s、图像不合格、运动或安全暂停都会中断连续确认。
+确认成功立即保存该帧的原始 RGB（不带网页叠加文字），结束时不覆盖：
+
+```text
+envs/euler/g1_vision_nav/g1_cabinet_left_rgb.png
+```
+
+照片保存成功后立即切换为站立模式，`vx=vy=yaw_rate=0`，不再搜索蓝色或跟随路径。
+底层运控继续维持平衡直到运行步数结束；不是冻结机器人关节，也不是强行暂停整个场景。
+
+终端取景阶段只提示到达、照片路径和「电气柜照片已保存，巡检完成」，确实失败时简短提示一次原因。
+网页仅保留巡检状态，不显示颜色比例。安全告警仍保留。
+超时或总仿真步数耗尽仍未确认时，本次不保存新照片，不报告拍照成功。
+旧照片不会被删除，请以本次「照片已保存」提示和文件修改时间判断，而不是只看文件是否存在。
+若到点时剩余时间不足，可用 `--num-steps 12000` 延长整段运行；不会重置搜索超时。
+
+这部分已用合成 RGB 和环境集成测试检查，仍需在当前旋转后的柜子场景中验证取景，
+再按实际第一视角调整蓝色比例与停车点；不能仅凭颜色占比保证仪表盘可读。
+
+默认空旷巡航上限为 1.2 m/s（入口和 `CommandLimits` 一致）；转弯仍为 0.20～0.25 m/s 上限，
+遇障接近为 0.05～0.18 m/s，清晰确认通过速度不超过 0.30 m/s，也不超过当前目标跟随速度。
+前进加速度为 0.80 m/s²，减速度保持 1.20 m/s²。速度指令逐渐提升，
+并非启动后立即跳到 1.2 m/s；短路段和转弯处不一定达到巡航上限。
+1.2 m/s 尚需 OrcaLab 实跑确认步态与避障距离，并非已验证的安全速度；必要时用
+`--max-speed 0.6` 降低巡航速度。模型、碰撞保护、近障速度、转弯上限没有放宽。
+
+转向符号统一按机器人正上方俯视解释：正数是左转/逆时针，负数是右转/顺时针。
+`rad` 表示目标相对身体的角度差，`rad/s` 表示每秒转多快；1 rad 约为 57.3°。
+终端分别显示「路线要求」与「最终指令」，前者可能被避障和平滑限速修改。
+网页 `heading` 是世界坐标中的当前身体朝向，`Target error` 是相对目标角度，
+`Route request` 是避障前的路线转向要求，`Command` 是最终发送值。
+不再用容易误解的 `base_yaw` 标注转向速度；日志频率保持不变。
+
+左侧路径点已恢复为调整前的版本。旧版左线曾完成在线验证，但当前手动 G1 接流与
+导航算法仍需结合实际 Layout 重新验证；沿用旧路径点不代表新版本已验证无碰撞。
+
+默认照片目录用 `Path("envs/euler/g1_vision_nav")` 配置，相对项目根目录解析，
+不硬编码用户主目录。自定义 `--output` 的相对路径也按项目根目录解析。
+生成的默认巡检 PNG 已加入 Git 忽略，不会与源代码一起误提交。
+
+旧的自动生成版本左线已经在线验证并完成视频录制；本次手动 G1 接流版本需重新验证。终点朝向与拍照时机优化留待下一轮。右线命令为：
 
 ```bash
-python examples/euler/g1_vision_nav/run_factory_inspection.py --route right
+python examples/euler/g1_vision_nav/run_factory_navi.py --route right
 ```
 
 但右线目前属于后续开发，不应在课程中写成“已经验收通过”。可以把它设计成课后作业：
@@ -535,23 +547,28 @@ python examples/euler/g1_vision_nav/run_factory_inspection.py --route right
 
 建议按数据流阅读，而不是按文件大小阅读：
 
-1. `run_factory_inspection.py`：任务入口、路线、出生点和依赖组装；
-2. `layout_scene.py`：AddActor 与相机注册；
-3. `config.py`：端口、频率、速度、到达半径；
-4. `waypoint_route.py`：当前路径点与切换条件；
-5. `point_goal_navigator.py`：实时位姿如何变成速度；
-6. `factory_inspection_navigator.py`：RGB 如何修正主路径；
-7. `g1_camera_stream_env.py`：相机激活、取帧和最终照片；
-8. `g1_vision_nav_env.py`：10 Hz 导航、50 Hz 运控与安全恢复；
-9. `g1_pick_locomotion_env.py`：29 关节到混合执行器的适配；
-10. `g1_factory_inspection_env.py`：任务级日志和验收指标。
+1. `run_factory_navi.py`：任务入口、路线、已有 Actor 和依赖组装；
+2. `config.py`：端口、频率、速度、到达半径；
+3. `command_bridge.py`：观测/速度数据类型、限速和平滑，以及向运控发送指令；
+4. `point_goal_navigator.py`：`WaypointRoute` 管理路径点，`PointGoalNavigator` 根据实时位姿计算速度；
+5. `factory_inspection_navigator.py`：RGB 如何修正主路径；
+6. `camera_stream.py`：接收内置流，以及 `CameraPreviewWindow` 网页预览与信息叠加；
+7. `g1_camera_stream_env.py`：复用/启动全局采集、取帧、断流等待和最终照片；
+8. `g1_vision_nav_env.py`：导航/工厂任务环境、10 Hz 导航与 50 Hz 运控调度，以及 `FactoryReporter` 中文报告；
+9. `g1_pick_locomotion_env.py`：29 关节混合执行器适配，以及按仿真时间推进的步态时钟；
+10. `safety_monitor.py`：碰撞和摔倒确认、安全停止与恢复。
+
+`envs/euler/g1_vision_nav` 共保留 10 个 Python 文件（包含 `__init__.py`）。
+相关类合入同一文件，但保留各自的职责和方法；相机断流、碰撞、摔倒等安全检查未删除。
+
+导航摘要每 100 个控制步输出一次（约 2 秒），相机常规状态每 250 步输出一次（约 5 秒）。成功检查不逐条打印；异常首次出现与恢复及时提示。检查频率和导航/运控频率不因日志节流而降低。
 
 ## 十二、验收标准
 
 ### 12.1 绿色桌子 Demo
 
 - G1 未跌倒；
-- 7072 RGB 帧持续增长；
+- 7070 RGB 帧持续增长；
 - 图像中实际观察到绿色桌面；
 - 视觉层至少介入一次；
 - G1 绕过桌子并进入目标半径。
@@ -563,15 +580,17 @@ python examples/euler/g1_vision_nav/run_factory_inspection.py --route right
 - RGB 风险实际改变过导航指令；
 - 短暂碰撞可以恢复，连续确认跌倒必须停止；
 - 最终距离不超过 `0.20m`；
-- `/tmp/g1_cabinet_left_rgb.png` 存在且不是空白图；
+- `envs/euler/g1_vision_nav/g1_cabinet_left_rgb.png` 存在且不是空白图；
 - 保存俯视录屏、第一视角和终端最终结果。
 
 ## 十三、常见错误
 
-### 13.1 相机 Actor 找不到
+### 13.1 没有视频或一直等待图像
 
-检查 G1 是否由当前脚本通过 AddActor 生成，以及 Actor 名是否为 `g1_navi`。不要把
-Layout 中手动拖入的另一个 G1 与代码生成的 G1 混为同一个实例。
+确认 UI 头部相机启用了 ColorCamera、Enable、IsRecording，ColorPort 为 7070，
+无其他相机占用该端口。使用 manual launch，由 Demo 推进仿真与渲染。
+检查终端是否显示复用/启动全局采集；只勾选 UI 相机开关不一定代表全局采集已经启动。
+启动前请停止上一份 Demo，避免两个控制程序同时推进仿真。
 
 ### 13.2 画面在站立和摔倒之间跳动
 
@@ -585,7 +604,7 @@ Layout 中手动拖入的另一个 G1 与代码生成的 G1 混为同一个实�
 ### 13.4 RGB 有画面但机器人不避障
 
 先确认 frame index 持续增长，再观察中央颜色占比、阈值和 `latest_mode`。Studio 能显示
-画面不等于 Python 一定连接了 7072 WebSocket。
+画面不等于 Python 一定连接了 7070 WebSocket。
 
 ### 13.5 G1 越过 waypoint 后不切换
 
@@ -598,7 +617,7 @@ Layout 中手动拖入的另一个 G1 与代码生成的 G1 混为同一个实�
 | --- | ---: | --- |
 | ORCA 架构与 Layout | 20 分钟 | 学员能解释三个软件层次 |
 | 新建并保存 Layout | 25 分钟 | 得到环境 JSON |
-| AddActor 与相机原理 | 20 分钟 | 能解释官方 Lesson 8 的限制 |
+| UI 相机与全局采集 | 20 分钟 | 能解释渲染、采集、视频接收的区别 |
 | 官方 G1 运控与关节适配 | 30 分钟 | 看懂 29→45 的适配边界 |
 | 绿色桌子最小闭环 | 25 分钟 | 理解 RGB 如何改变指令 |
 | 工厂左线巡检 | 35 分钟 | 到柜前并保存照片 |

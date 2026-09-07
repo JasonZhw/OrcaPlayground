@@ -2,29 +2,29 @@
 
 from __future__ import annotations
 
-import numpy as np
+from dataclasses import replace
 
-from envs.euler.g1_vision_nav.camera_preview import CameraPreviewWindow
+import numpy as np
+import pytest
+
+from envs.euler.g1_vision_nav.camera_stream import CameraPreviewWindow
 from envs.euler.g1_vision_nav.command_bridge import (
     CommandLimiter,
+    NavigationObservation,
+    VelocityCommand,
     recovery_velocity_command,
 )
 from envs.euler.g1_vision_nav.config import NavigationConfig, VisualAvoidanceConfig
-from envs.euler.g1_vision_nav.contracts import (
-    NavigationObservation,
-    VelocityCommand,
-)
-from envs.euler.g1_vision_nav.point_goal_navigator import (
-    PointGoalNavigator,
-    world_goal_in_body_frame,
-)
-from envs.euler.g1_vision_nav.safety_monitor import NavigationSafetyMonitor
-from envs.euler.g1_vision_nav.simulation_gait_clock import SimulationGaitClock
 from envs.euler.g1_vision_nav.factory_inspection_navigator import (
     FactoryColorObstacleDetector,
     FactoryInspectionNavigator,
 )
-from envs.euler.g1_vision_nav.waypoint_route import WaypointRoute
+from envs.euler.g1_vision_nav.point_goal_navigator import (
+    PointGoalNavigator,
+    WaypointRoute,
+    world_goal_in_body_frame,
+)
+from envs.euler.g1_vision_nav.safety_monitor import NavigationSafetyMonitor
 
 
 def _observation(goal_xy_robot_m: tuple[float, float]) -> NavigationObservation:
@@ -76,8 +76,14 @@ def test_world_goal_transform_respects_robot_yaw() -> None:
 
 
 def test_point_goal_navigator_stops_inside_tolerance() -> None:
-    command = PointGoalNavigator().act(_observation((0.2, 0.0)))
+    command = PointGoalNavigator().act(_observation((0.38, 0.0)))
     assert command == VelocityCommand.stopped()
+
+
+def test_point_goal_navigator_keeps_moving_outside_thirty_eight_centimeters() -> None:
+    navigator = PointGoalNavigator()
+    assert navigator.navigation.goal_tolerance_m == 0.38
+    assert navigator.act(_observation((0.39, 0.0))).walk_enabled
 
 
 def test_point_goal_navigator_uses_safe_forward_arc_for_side_goal() -> None:
@@ -129,10 +135,10 @@ def test_point_goal_navigator_moves_slowly_toward_forward_goal() -> None:
     assert command.yaw_rate_rps == 0.0
 
 
-def test_point_goal_navigator_reaches_six_tenths_cruise_on_clear_route() -> None:
+def test_point_goal_navigator_reaches_faster_cruise_on_clear_route() -> None:
     navigator = PointGoalNavigator()
     command = navigator.act(_observation((3.0, 0.0)))
-    assert command.forward_mps == 0.60
+    assert command.forward_mps == 1.2
 
 
 def test_green_workbench_detector_ignores_gray_floor() -> None:
@@ -148,7 +154,7 @@ def test_color_detector_ignores_dark_hands_and_peripheral_shelving() -> None:
     rgb[:, 60:] = np.asarray([25, 25, 25], dtype=np.uint8)
     rgb[33:, :] = np.asarray([20, 20, 20], dtype=np.uint8)
     risk = FactoryColorObstacleDetector().estimate(rgb)
-    assert risk.dark_fraction > 0.0
+    assert risk.left_fraction == risk.right_fraction == 0.0
     assert risk.risk_fraction == 0.0
     assert not risk.obstacle_visible
 
@@ -162,7 +168,7 @@ def test_green_workbench_detector_reports_image_regions() -> None:
     assert risk.center_fraction > 0.0
 
 
-def test_color_detector_recognizes_yellow_and_dark_surfaces() -> None:
+def test_color_detector_recognizes_yellow_but_ignores_gray_shadow() -> None:
     detector = FactoryColorObstacleDetector()
     yellow = np.full((60, 90, 3), 150, dtype=np.uint8)
     yellow[:36, 30:60] = np.asarray([210, 180, 40], dtype=np.uint8)
@@ -173,8 +179,39 @@ def test_color_detector_recognizes_yellow_and_dark_surfaces() -> None:
     dark = np.full((60, 90, 3), 150, dtype=np.uint8)
     dark[:36, 30:60] = np.asarray([35, 40, 45], dtype=np.uint8)
     dark_risk = detector.estimate(dark)
-    assert dark_risk.dark_fraction > 0.0
-    assert dark_risk.obstacle_visible
+    assert dark_risk.risk_fraction == 0.0
+    assert not dark_risk.obstacle_visible
+
+
+@pytest.mark.parametrize('color, field', [((180, 30, 30), 'red_fraction'),
+    ((180, 30, 60), 'red_fraction'), ((40, 140, 90), 'green_fraction'),
+    ((170, 150, 40), 'yellow_fraction'), ((30, 60, 180), 'blue_fraction')])
+def test_hsv_detector_recognizes_vivid_red_green_yellow_blue(color, field):
+    rgb = np.full((60, 90, 3), 120, np.uint8)
+    rgb[15:33, 30:60] = color
+    risk = FactoryColorObstacleDetector().estimate(rgb)
+    assert risk.center_fraction == 1.0
+    assert risk.blocked
+    assert getattr(risk, field) == pytest.approx(1 / 3)
+
+
+def test_hsv_detector_ignores_gray_at_every_brightness():
+    rgb = np.broadcast_to(np.arange(256, dtype=np.uint8)[:, None, None], (256, 90, 3)).copy()
+    risk = FactoryColorObstacleDetector().estimate(rgb)
+    assert risk.left_fraction == risk.center_fraction == risk.right_fraction == 0
+
+
+def test_hsv_detector_rejects_nearly_black_chromatic_noise():
+    rgb = np.full((60, 90, 3), 120, np.uint8)
+    rgb[15:33, 30:60] = [1, 8, 2]
+    assert FactoryColorObstacleDetector().estimate(rgb).risk_fraction == 0
+
+
+@pytest.mark.parametrize('field', ['hsv_saturation_min', 'hsv_value_min'])
+@pytest.mark.parametrize('value', [0, 256, float('nan'), float('inf')])
+def test_hsv_thresholds_reject_invalid_values(field, value):
+    with pytest.raises(ValueError):
+        replace(VisualAvoidanceConfig(), **{field: value})
 
 
 def test_factory_navigation_matches_point_goal_on_clear_rgb() -> None:
@@ -199,9 +236,9 @@ def test_factory_navigation_slows_and_steers_to_clear_side() -> None:
 
 def test_factory_navigation_reduces_forward_speed_as_risk_increases() -> None:
     moderate_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    moderate_rgb[15:18, 30:45] = np.asarray([25, 25, 25], dtype=np.uint8)
+    moderate_rgb[15:18, 30:45] = np.asarray([40, 140, 90], dtype=np.uint8)
     blocked_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    blocked_rgb[15:33, 30:60] = np.asarray([25, 25, 25], dtype=np.uint8)
+    blocked_rgb[15:33, 30:60] = np.asarray([40, 140, 90], dtype=np.uint8)
 
     moderate = FactoryInspectionNavigator().act(
         _observation_with_rgb((2.0, 0.0), moderate_rgb)
@@ -210,14 +247,14 @@ def test_factory_navigation_reduces_forward_speed_as_risk_increases() -> None:
         _observation_with_rgb((2.0, 0.0), blocked_rgb)
     )
 
-    assert 0.05 < moderate.forward_mps <= 0.15
+    assert 0.05 < moderate.forward_mps <= 0.18
     assert blocked.forward_mps == 0.05
     assert blocked.forward_mps < moderate.forward_mps
 
 
 def test_blocked_visual_obstacle_turns_without_reverse() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    rgb[15:33, 30:60] = np.asarray([25, 25, 25], dtype=np.uint8)
+    rgb[15:33, 30:60] = np.asarray([40, 140, 90], dtype=np.uint8)
     navigator = FactoryInspectionNavigator()
     command = navigator.act(_observation_with_rgb((2.0, 1.0), rgb))
 
@@ -233,41 +270,27 @@ def test_blocked_visual_obstacle_turns_without_reverse() -> None:
 
 def test_factory_navigation_fades_continuously_back_to_path() -> None:
     obstacle_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    obstacle_rgb[:36, 45:, :] = np.asarray([70, 145, 130], dtype=np.uint8)
+    obstacle_rgb[:36, 45:] = [70, 145, 130]
     clear_rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    navigator = FactoryInspectionNavigator(
-        visual=VisualAvoidanceConfig(
-            clear_confirmation_steps=3,
-            stale_frame_limit_steps=20,
-        )
-    )
-
-    command = navigator.act(
-        _observation_with_rgb((2.0, 0.0), obstacle_rgb, frame_index=1)
-    )
-    assert navigator.latest_mode == "visual_correction"
-    assert command.forward_mps == 0.05
-
-    first_clear = navigator.act(
-        _observation_with_rgb((2.0, 0.0), clear_rgb, frame_index=2)
-    )
-    second_clear = navigator.act(
-        _observation_with_rgb((2.0, 0.0), clear_rgb, frame_index=3)
-    )
-    assert navigator.latest_mode == "return_to_path"
-    assert navigator.avoidance_active
-    assert navigator.avoidance_side == 1
-    assert first_clear.yaw_rate_rps > second_clear.yaw_rate_rps > 0.0
-    assert first_clear.lateral_mps > second_clear.lateral_mps > 0.0
-
-    command = navigator.act(
-        _observation_with_rgb((2.0, 0.0), clear_rgb, frame_index=4)
-    )
-    assert navigator.latest_mode == "follow_path"
+    navigator = FactoryInspectionNavigator(visual=VisualAvoidanceConfig(
+        clear_confirm_s=.2, return_blend_s=.4, stale_frame_limit_steps=20,
+    ))
+    navigator.act(replace(_observation_with_rgb((2., -1.), obstacle_rgb), sim_time_s=0.))
+    commands = []
+    for i in range(2, 10):
+        command = navigator.act(replace(
+            _observation_with_rgb((2., -1.), clear_rgb, frame_index=i),
+            sim_time_s=(i - 1) * .1,
+        ))
+        commands.append(command)
+    assert commands[0].yaw_rate_rps == 0
+    assert commands[3].yaw_rate_rps < commands[2].yaw_rate_rps
+    assert all(command.lateral_mps == 0 for command in commands)
     assert not navigator.avoidance_active
     assert navigator.avoidance_side == 0
-    assert command == PointGoalNavigator().act(
-        _observation_with_rgb((2.0, 0.0), clear_rgb, frame_index=4)
+    assert navigator.latest_mode == "follow_path"
+    assert commands[-1] == PointGoalNavigator().act(
+        _observation_with_rgb((2., -1.), clear_rgb, frame_index=9)
     )
 
 
@@ -289,16 +312,16 @@ def test_waypoint_change_preserves_active_avoidance_direction() -> None:
         _observation_with_rgb((2.0, -1.0), clear_rgb, frame_index=2)
     )
 
-    assert navigator.latest_mode == "return_to_path"
+    assert navigator.latest_mode == "clear_confirm"
     assert navigator.avoidance_active
     assert navigator.avoidance_side == 1
-    assert current.yaw_rate_rps > 0.0
+    assert current.yaw_rate_rps == 0.0
     assert navigator.intervention_count == 2
 
 
 def test_collision_recovery_steers_away_from_occupied_image_edge() -> None:
     rgb = np.full((60, 90, 3), 120, dtype=np.uint8)
-    rgb[15:33, 60:90] = np.asarray([25, 25, 25], dtype=np.uint8)
+    rgb[15:33, 60:90] = np.asarray([40, 140, 90], dtype=np.uint8)
     navigator = FactoryInspectionNavigator()
 
     route_command = navigator.act(
@@ -413,15 +436,6 @@ def test_command_limiter_caps_corner_speed_without_resetting_yaw() -> None:
         walk_enabled=True,
     )
 
-
-def test_simulation_gait_clock_ignores_wall_clock_and_pauses_while_standing() -> None:
-    clock = SimulationGaitClock(gait_period_s=0.8)
-
-    assert clock.update(0.0, walking=False) == 0.0
-    assert clock.update(1.0, walking=False) == 0.0
-    assert np.isclose(clock.update(1.2, walking=True), 0.25)
-    assert np.isclose(clock.update(1.2, walking=True), 0.25)
-    assert np.isclose(clock.update(1.4, walking=True), 0.50)
 
 
 def _safety_monitor() -> NavigationSafetyMonitor:

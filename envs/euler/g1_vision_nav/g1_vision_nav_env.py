@@ -3,45 +3,62 @@
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+from online_verifier import OnlineVerifier
 
 from envs.euler.g1_vision_nav.camera_stream import CameraFrame
 from envs.euler.g1_vision_nav.command_bridge import (
     CommandLimiter,
+    NavigationObservation,
+    VelocityCommand,
+    VisualNavigator,
     apply_velocity_command,
 )
 from envs.euler.g1_vision_nav.config import (
+    BluePanelInspectionConfig,
     CameraConfig,
     CommandLimits,
     NavigationConfig,
     TimingConfig,
 )
-from envs.euler.g1_vision_nav.contracts import (
-    NavigationObservation,
-    VelocityCommand,
-    VisualNavigator,
+from envs.euler.g1_vision_nav.factory_inspection_navigator import (
+    BluePanelInspection,
+    FactoryInspectionNavigator,
 )
 from envs.euler.g1_vision_nav.g1_camera_stream_env import (
     G1CameraStreamEnv,
 )
 from envs.euler.g1_vision_nav.point_goal_navigator import (
     PointGoalNavigator,
+    WaypointRoute,
     world_goal_in_body_frame,
 )
 from envs.euler.g1_vision_nav.safety_monitor import (
     NavigationSafetyMonitor,
     NavigationSafetyStatus,
 )
-from envs.euler.g1_vision_nav.waypoint_route import WaypointRoute
+
+
+def format_turn_rate(rate: float) -> str:
+    """只解释最终指令，不将 rad/s 混同于机器人当前朝向。"""
+    if rate >= 0.005:
+        direction = "左转/逆时针"
+    elif rate <= -0.005:
+        direction = "右转/顺时针"
+    else:
+        direction = "不转向"
+    return f"{rate:+.2f} rad/s（{direction}）"
 
 
 class G1VisionNavEnv(G1CameraStreamEnv):
     """Drive G1 to a world-frame point while keeping the RGB pipeline active."""
 
-    NAVIGATION_LOG_INTERVAL = 50
+    NAVIGATION_LOG_INTERVAL = 100
+    NAVIGATION_CHECK_INTERVAL = 50
     _SUPPORT_BODY_TOKENS = ("ankle_roll_link", "foot", "toe")
 
     def __init__(
@@ -162,7 +179,7 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             requested = self._requested_command(step)
             command = self.command_limiter.apply(
                 requested,
-                emergency_stop=self._emergency_stop,
+                emergency_stop=self._emergency_stop or not self.camera_motion_ready,
             )
             apply_velocity_command(self.locomotion, command)
         return super().compute_ctrl(step)
@@ -190,20 +207,22 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             fallen=self._has_fallen(state),
             collision=collision,
         )
+        was_stopped = self._emergency_stop
         self._emergency_stop = safety.stop_active
         self._terminal_safety_stop = safety.terminal
         self._latest_safety_status = safety
         self._unsafe_collision = collision
         if safety.reason is not None:
             self._last_safety_reason = safety.reason
+        if safety.stop_active and not was_stopped:
+            verifier.observe(f"safety_stop_{step}", f"[安全] 暂停行走：{safety.reason}", step=step)
         if safety.recovered:
             self._safety_recovery_count += 1
             print(
-                "[INFO] Safety pause cleared; resuming route "
-                f"(recoveries={self._safety_recovery_count})"
+                f"[安全] 暂停已解除，恢复路线（累计恢复 {self._safety_recovery_count} 次）。"
             )
 
-        if step % self.NAVIGATION_LOG_INTERVAL != 0:
+        if step % self.NAVIGATION_CHECK_INTERVAL != 0:
             return
         verifier.check(
             f"goal_distance_finite_{step}",
@@ -219,21 +238,26 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             "no confirmed fall",
             f"导航安全状态（短暂接触可恢复，step={step}）",
         )
+        if step % self.NAVIGATION_LOG_INTERVAL != 0 or self.route.completed:
+            return
         command = self.command_limiter.previous
+        if not self.camera_motion_ready:
+            status = "等待图像"
+        elif safety.stop_active:
+            status = "安全暂停"
+        elif self._goal_reached:
+            status = "巡检完成"
+        elif self.route.completed:
+            status = "终点取景"
+        else:
+            status = "跟随路线"
         verifier.observe(
             f"navigation_state_{step}",
-            f"waypoint={self.route.current_index + 1}/{len(self.route.waypoints)}, "
-            f"position=({position[0]:.3f}, {position[1]:.3f}), "
-            f"heading={state['base_heading_rad']:.3f}rad, "
-            f"distance={distance:.3f}m, remaining={route_remaining:.3f}m, "
-            f"bearing={state['goal_bearing_rad']:.3f}rad, "
-            f"command=({command.forward_mps:.3f}, {command.lateral_mps:.3f}, "
-            f"{command.yaw_rate_rps:.3f}), safety_stop={safety.stop_active}, "
-            f"safety_reason={safety.reason or 'none'}, "
-            f"recovery_grace={safety.recovery_grace_steps}, "
-            f"collision_samples={safety.collision_steps}, "
-            f"collision_hold={safety.collision_hold_steps}, "
-            f"recoveries={self._safety_recovery_count}",
+            f"[导航] {status} | 路径点 {self.route.current_index + 1}/{len(self.route.waypoints)} "
+            f"| 位置 ({position[0]:.2f}, {position[1]:.2f}) | 距路径点 {distance:.2f} m "
+            f"| 朝向 {math.degrees(state['base_heading_rad']):.0f}°\n"
+            f"       指令：前进 {command.forward_mps:.2f}、侧移 {command.lateral_mps:.2f} m/s，"
+            f"转向 {format_turn_rate(command.yaw_rate_rps)}",
             step=step,
         )
 
@@ -249,7 +273,7 @@ class G1VisionNavEnv(G1CameraStreamEnv):
         minimum_distance = min(self._minimum_distance_m, remaining)
         verifier.observe(
             "point_goal_final_state",
-            f"目标导航结束：final_distance={distance:.3f}m, minimum_distance={minimum_distance:.3f}m",
+            f"[结束] 距终点 {distance:.2f} m，最小剩余路线距离 {minimum_distance:.2f} m",
         )
 
     def verify_final(self, verifier) -> None:
@@ -269,14 +293,15 @@ class G1VisionNavEnv(G1CameraStreamEnv):
         )
         verifier.check(
             "point_goal_reached",
-            self.route.completed and final_distance <= self.navigation_config.goal_tolerance_m,
+            self.arrival_confirmed,
             final_distance,
-            f"<={self.navigation_config.goal_tolerance_m}",
-            "G1 到达目标容差范围并停止",
+            "已进入最终到达范围",
+            "G1 已到达最终路径点",
         )
         verifier.check(
             "inspection_photo_saved",
             self.route.completed
+            and self._sample_saved
             and self.sample_path.is_file()
             and self.sample_path.stat().st_size > 100,
             str(self.sample_path),
@@ -299,10 +324,12 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             self._latest_frame is not None,
             None if self._latest_frame is None else self._latest_frame.index,
             "camera frame index",
-            "导航环境同步获得 7072 RGB",
+            "导航环境获得 UI 相机 RGB",
         )
 
     def _requested_command(self, step: int) -> VelocityCommand:
+        if not self.camera_motion_ready:
+            return VelocityCommand.stopped()
         if step == 0:
             return VelocityCommand(walk_enabled=True)
         if self._goal_reached:
@@ -321,12 +348,11 @@ class G1VisionNavEnv(G1CameraStreamEnv):
                 self.navigation_config.waypoint_turning_forward_mps
             )
             print(
-                f"[INFO] Waypoint {previous_index + 1} reached; "
-                f"next=({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f})"
+                f"[路线] 已到路径点 {previous_index + 1}，下一点 "
+                f"({self.goal_xy_world[0]:.2f}, {self.goal_xy_world[1]:.2f})"
             )
         if update.completed:
-            self._goal_reached = True
-            return VelocityCommand(walk_enabled=True)
+            return self._arrival_command(state)
 
         observation = self._build_navigation_observation()
         self._latest_navigation_observation = observation
@@ -338,6 +364,18 @@ class G1VisionNavEnv(G1CameraStreamEnv):
                 self.navigation_config.recovery_forward_mps,
             )
         return requested
+
+    @property
+    def arrival_tolerance_m(self) -> float:
+        return self.navigation_config.goal_tolerance_m
+
+    @property
+    def arrival_confirmed(self) -> bool:
+        return self.route.completed and self._final_goal_distance_m() <= self.arrival_tolerance_m
+
+    def _arrival_command(self, state: dict) -> VelocityCommand:
+        self._goal_reached = True
+        return VelocityCommand(walk_enabled=True)
 
     def _build_navigation_observation(self) -> NavigationObservation:
         state = self._read_planar_state()
@@ -352,6 +390,7 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             frame_index = self._latest_frame.index
         return NavigationObservation(
             rgb=rgb,
+            # 到点后由 route 按顺序切换；绕障后直接重新朝当前点走，不拉回旧线段。
             goal_xy_robot_m=state["goal_xy_robot_m"],
             base_velocity_xy_mps=state["base_velocity_xy_mps"],
             base_yaw_rate_rps=state["base_yaw_rate_rps"],
@@ -367,14 +406,18 @@ class G1VisionNavEnv(G1CameraStreamEnv):
         distance_text = "waiting"
         pose_text = "waiting"
         bearing_text = "waiting"
+        heading_text = "waiting"
         if observation is not None:
-            distance_text = f"{observation.goal_distance_m:.2f} m"
+            distance_text = f"{self._goal_distance_m():.2f} m"
             state = self._read_planar_state()
             position = np.asarray(state["pelvis_position_world"], dtype=np.float64)
             pose_text = f"({position[0]:.2f}, {position[1]:.2f})"
             bearing_text = f"{observation.goal_bearing_rad:+.2f}"
+            heading_text = f"{math.degrees(state['base_heading_rad']):+.0f}"
         safety = self._latest_safety_status
-        if self._emergency_stop:
+        if not self.camera_motion_ready:
+            safety_text = "WAIT CAMERA"
+        elif self._emergency_stop:
             safety_text = "STOP"
         elif safety is not None and safety.recovery_grace_steps > 0:
             grace_seconds = safety.recovery_grace_steps / self.timing_config.navigation_hz
@@ -390,9 +433,10 @@ class G1VisionNavEnv(G1CameraStreamEnv):
             (
                 f"Waypoint: {self.route.current_index + 1}/{len(self.route.waypoints)}"
                 f" | distance: {distance_text}",
-                f"Pose: {pose_text} | bearing={bearing_text}",
+                f"Pose: {pose_text} | heading={heading_text} deg",
+                f"Target error: {bearing_text} rad | +left/CCW, -right/CW",
                 f"Command: vx={command.forward_mps:.2f} vy={command.lateral_mps:.2f}"
-                f" yaw={command.yaw_rate_rps:.2f}",
+                f" yaw_rate={command.yaw_rate_rps:+.2f} rad/s",
                 f"Safety: {safety_text}"
                 f" | recoveries={self._safety_recovery_count}",
             )
@@ -490,3 +534,209 @@ class G1VisionNavEnv(G1CameraStreamEnv):
 
     def _is_terminated(self, obs: dict) -> bool:
         return self._goal_reached or self._terminal_safety_stop
+
+
+class G1FactoryInspectionEnv(G1VisionNavEnv):
+    """Add RGB intervention and cabinet-arrival telemetry to route navigation."""
+
+    def __init__(self, *args, navigator: FactoryInspectionNavigator,
+                 inspection_config: BluePanelInspectionConfig | None = None, **kwargs) -> None:
+        self.visual_navigator = navigator
+        self.inspection = BluePanelInspection(inspection_config)
+        self._inspection_last_log: str | None = None
+        super().__init__(*args, navigator=navigator, **kwargs)
+
+    def reset_model(self) -> tuple[dict, dict]:
+        self.inspection.reset()
+        self._inspection_last_log = None
+        return super().reset_model()
+
+    @property
+    def arrival_tolerance_m(self) -> float:
+        # 路线先进入配置的严格到达半径，再允许极小的原地取景漂移。
+        return self.inspection.config.station_radius_m
+
+    @property
+    def arrival_confirmed(self) -> bool:
+        # 工厂任务先到点再取景；转向微漂移不能抹掉已完成的到点判定。
+        return self.route.completed and self.inspection.active
+
+    def _requested_command(self, step: int) -> VelocityCommand:
+        if self._sample_saved or self.inspection.failed:
+            return VelocityCommand.stopped()
+        if self.inspection.ready:
+            return VelocityCommand.stopped()
+        if self.inspection.active:
+            # 在断流/接触期间也更新时间上限，不让取景无限等待。
+            return self._arrival_command(self._read_planar_state())
+        return super()._requested_command(step)
+
+    def _arrival_command(self, state: dict) -> VelocityCommand:
+        if not self.inspection.active:
+            self.inspection.start(self.route.final_goal, float(self.data.time))
+            print("[巡检] 已到最后导航点，先停稳；有电气柜就拍照，没有才旋转。")
+        previous = self.command_limiter.previous
+        command_still = (abs(previous.forward_mps) < .03 and abs(previous.lateral_mps) < .03
+                         and abs(previous.yaw_rate_rps) < .03)
+        return self.inspection.update(
+            rgb=self._latest_frame.image if self.camera_motion_ready else None,
+            frame_index=self._latest_frame.index if self.camera_motion_ready else -1,
+            sim_time_s=float(self.data.time),
+            position_xy=np.asarray(state['pelvis_position_world'])[:2],
+            heading_rad=float(state['base_heading_rad']),
+            linear_speed_mps=float(np.linalg.norm(state['base_velocity_xy_mps'])),
+            yaw_rate_rps=float(state['base_yaw_rate_rps']),
+            command_still=command_still,
+            safe=not self._emergency_stop and not self._terminal_safety_stop,
+        )
+
+    def _should_save_rgb_sample(self) -> bool:
+        # 工厂只在运行中的确认时刻保存；禁止 after_loop 另取一帧凑数。
+        return False
+
+    def _save_inspection_photo(self, verifier) -> None:
+        if (not self.inspection.ready or self._sample_saved or self._emergency_stop
+                or self._terminal_safety_stop):
+            return
+        photo = self.inspection.photo_rgb
+        if photo is None:
+            raise RuntimeError("电气柜画面已确认，但缺少对应图像，未保存照片")
+        self._save_rgb_image(photo, verifier)
+        self._goal_reached = True
+        # 已经停稳才会拍照；成功后立刻清空残余指令并切为站立，不继续原地踏步。
+        self.command_limiter.reset()
+        apply_velocity_command(self.locomotion, VelocityCommand.stopped())
+        verifier.observe("blue_panel_photo", "[巡检] 电气柜照片已保存，巡检完成。")
+
+    def before_loop(self, verifier) -> None:
+        super().before_loop(verifier)
+        verifier.observe(
+            "visual_avoidance_mode",
+            "[避障] HSV 检测红/黄/绿/蓝，忽略低饱和度灰色区域；轻度风险只减前进速度，"
+            f"保留目标转向。中央彩色占比达到 {self.visual_navigator.visual.blocked_risk_fraction:.0%} "
+            "时优先避障，强避障后确认清晰再恢复巡航。",
+        )
+        verifier.observe(
+            "blue_panel_inspection",
+            "[巡检] 到达终点后停止移动，获取电气柜照片后结束巡检。",
+        )
+
+    def verify_step(self, step: int, verifier) -> None:
+        super().verify_step(step, verifier)
+        if self.inspection.active:
+            # 此时安全检查已更新。若刚发生接触，废弃本轮候选，重新确认。
+            if (self._emergency_stop or not self.camera_motion_ready) and self.inspection.ready and not self._sample_saved:
+                self.inspection.invalidate_confirmation()
+            self._save_inspection_photo(verifier)
+            mode = self.inspection.mode
+            if self.inspection.failed and mode != self._inspection_last_log:
+                self._inspection_last_log = mode
+                verifier.observe(
+                    f"inspection_state_{step}",
+                    f"[巡检] {mode}", step=step,
+                )
+            return  # 不再展示途中遗留的避障状态。
+        if step % self.NAVIGATION_LOG_INTERVAL != 0:
+            return
+        risk = self.visual_navigator.latest_risk
+        if risk is None:
+            return
+        base = self.visual_navigator.latest_base_command
+        phase = {
+            "visual_caution": "彩色提示减速（保留转向）",
+            "visual_correction": "避障修正",
+            "clear_confirm": "清晰确认",
+            "return_to_path": "恢复目标转向",
+            "follow_path": "跟随路线",
+            "stale_rgb_stop": "图像停更",
+        }.get(self.visual_navigator.latest_mode, self.visual_navigator.latest_mode)
+        verifier.observe(
+            f"visual_risk_{step}",
+            f"[视觉] {phase} "
+            f"| 障碍占比 左/中/右：{risk.left_fraction:.0%}/"
+            f"{risk.center_fraction:.0%}/{risk.right_fraction:.0%} "
+            f"| 路线要求 {format_turn_rate(base.yaw_rate_rps)}",
+            step=step,
+        )
+
+    def verify_final(self, verifier) -> None:
+        super().verify_final(verifier)
+        verifier.check(
+            "blue_panel_confirmed", self.inspection.ready and self._sample_saved,
+            self.inspection.mode, "取得有效电气柜照片", "电气柜巡检拍照",
+        )
+        verifier.check(
+            "visual_obstacle_observed",
+            self.visual_navigator.maximum_risk_fraction >= self.visual_navigator.visual.slow_risk_fraction,
+            self.visual_navigator.maximum_risk_fraction,
+            f">={self.visual_navigator.visual.slow_risk_fraction}",
+            "UI RGB 实际观察到红、黄、绿或蓝色候选障碍区域",
+        )
+        verifier.check(
+            "visual_avoidance_intervened",
+            self.visual_navigator.intervention_count > 0,
+            self.visual_navigator.intervention_count,
+            ">0",
+            "视觉风险实际改变了点目标速度指令",
+        )
+
+    def _camera_preview_lines(self, frame: CameraFrame) -> list[str]:
+        lines = super()._camera_preview_lines(frame)
+        if self.inspection.active:
+            status = "SAVED" if self._sample_saved else "FAILED" if self.inspection.failed else "SEARCH / ALIGN"
+            lines.append(f"Inspection: {status}")
+            return lines
+        risk = self.visual_navigator.latest_risk
+        if risk is None:
+            lines.append(f"Avoidance: {self.visual_navigator.latest_mode} | risk: waiting")
+        else:
+            base = self.visual_navigator.latest_base_command
+            lines.append(
+                f"Avoidance: {self.visual_navigator.latest_mode}"
+                f" | risk={risk.risk_fraction:.3f}"
+                f" | side={self.visual_navigator.avoidance_side:+d}"
+                f" | active={int(self.visual_navigator.avoidance_active)}"
+            )
+            lines.append(f"Route request: yaw_rate={base.yaw_rate_rps:+.2f} rad/s (before avoidance)")
+        return lines
+
+
+class FactoryReporter(OnlineVerifier):
+    """保留官方报告格式，只调整本 Demo 的终端显示。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.observed_events: set[str] = set()
+        self.failed_checks: set[str] = set()
+
+    def check(self, name, condition, actual=None, expected=None, detail=""):
+        passed = bool(condition)
+        self.checks.append({
+            "name": name, "passed": passed,
+            "actual": _json_value(actual), "expected": _json_value(expected),
+            "detail": detail,
+        })
+        # 去除步号后按检查类型去重：异常初次出现立即提示，持续异常不刷屏。
+        key = re.sub(r"_\d+$", "", name)
+        if not passed and key not in self.failed_checks:
+            print(f"[异常] {detail or name}；实际：{actual}，要求：{expected}")
+            self.failed_checks.add(key)
+        elif passed and key in self.failed_checks:
+            print(f"[恢复] {detail or name}")
+            self.failed_checks.remove(key)
+
+    def observe(self, name, prompt, step=0):
+        if name not in self.observed_events:
+            self.observations.append({"name": name, "prompt": prompt, "step": step})
+            self.observed_events.add(name)
+        print(prompt if prompt.startswith("[") else f"[提示] {prompt}")
+
+
+def _json_value(value):
+    if isinstance(value, (np.ndarray, np.generic)):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    return value

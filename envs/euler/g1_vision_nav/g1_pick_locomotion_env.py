@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from g1_locomotion import G1Locomotion
 from locomotion_env import LocomotionEnv
 from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv
 
-from envs.euler.g1_vision_nav.simulation_gait_clock import SimulationGaitClock
+
+class SimulationGaitClock:
+    """Accumulate walking time without depending on renderer wall-clock timing."""
+
+    def __init__(self, gait_period_s: float) -> None:
+        if not math.isfinite(gait_period_s) or gait_period_s <= 0.0:
+            raise ValueError("gait_period_s must be finite and positive")
+        self.gait_period_s = float(gait_period_s)
+        self.reset()
+
+    def reset(self) -> None:
+        self._last_sim_time_s: float | None = None
+        self._walking_elapsed_s = 0.0
+
+    def update(self, sim_time_s: float, *, walking: bool) -> float:
+        """Return phase in [0, 1), advancing only with simulated walking time."""
+        if not math.isfinite(sim_time_s) or sim_time_s < 0.0:
+            raise ValueError("sim_time_s must be finite and non-negative")
+        if self._last_sim_time_s is None or sim_time_s < self._last_sim_time_s:
+            if self._last_sim_time_s is not None:
+                self._walking_elapsed_s = 0.0
+            self._last_sim_time_s = float(sim_time_s)
+            return 0.0
+
+        elapsed_s = float(sim_time_s - self._last_sim_time_s)
+        self._last_sim_time_s = float(sim_time_s)
+        if walking:
+            self._walking_elapsed_s += elapsed_s
+        return (self._walking_elapsed_s % self.gait_period_s) / self.gait_period_s
 
 
 def count_actor_actuators(actuator_dict: dict[str, dict], actor_name: str) -> int:
@@ -121,17 +151,7 @@ class G1PickLocomotionEnv(LocomotionEnv):
         self._position_kp = np.asarray(position_kp, dtype=np.float64)
         self._position_kd = np.asarray(position_kd, dtype=np.float64)
 
-        position_count = int(np.sum(self._position_controlled))
-        motor_count = self.NUM_BODY_DOFS - position_count
-        actor_actuator_count = count_actor_actuators(actuator_dict, self.agent_name)
-        actor_auxiliary_count = max(0, actor_actuator_count - self.NUM_BODY_DOFS)
-        scene_other_count = max(0, self.model.nu - actor_actuator_count)
-        print(
-            "[INFO] g1_pick_usda actuator mapping: "
-            f"body_position={position_count}, body_motor={motor_count}, "
-            f"g1_auxiliary_zero={actor_auxiliary_count}, "
-            f"scene_other_zero={scene_other_count}"
-        )
+        print("[机器人] 29 个本体关节执行器匹配完成。")
 
     def step(self, action: np.ndarray) -> tuple:
         """Step with a 29-D policy target while the MuJoCo model has 45 controls."""

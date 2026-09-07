@@ -225,3 +225,6 @@ MUJOCO_LOG.TXT
 #logs
 logs/*
 log/*
+
+# Factory inspection snapshots (generated, not source code)
+/envs/euler/g1_vision_nav/g1_cabinet_*_rgb.png
