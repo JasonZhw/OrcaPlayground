@@ -77,11 +77,9 @@ class G1CameraStreamEnv(G1PickLocomotionEnv):
             )
 
     def _start_capture(self, verifier) -> None:
-        """启动全局采集，但不注册 Actor、不覆盖 UI 参数、不抢占已有录制。"""
-        frame = self.get_current_frame()
-        if frame >= 0:
-            verifier.observe("camera_capture_reused", "[相机] 复用已有采集，退出时保持开启。")
-            return
+        """每次任务启动都初始化全局采集，不注册 Actor、不覆盖 UI 参数。"""
+        # 相机重建后，帧号可能仍返回 0，但采集器并未初始化。
+        # 因此不能用非负帧号跳过启动；真正可用仍由后续收到的新鲜 RGB 帧确认。
         # 独立目录避免覆盖旧录像。先记录所有权，使 RPC 超时后的退出也会尝试清理。
         capture_dir = tempfile.mkdtemp(prefix="g1-factory-video-")
         self._owns_capture = True

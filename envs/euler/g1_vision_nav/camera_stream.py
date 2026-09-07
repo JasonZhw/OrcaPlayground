@@ -231,8 +231,6 @@ h2{margin:10px}.hint{margin:0 0 10px;color:#aaa}
 img{width:min(96vw,960px);height:auto;border:1px solid #444;background:#000}
 </style></head><body>
 <h2>G1 相机预览 &mdash; camera_head</h2>
-<div class="hint">画面类型见叠加信息；深度视频亮度不等于米制距离。</div>
-<div class="hint">关闭或刷新网页不会停止导航。RGB 可在 OrcaLab 第一视角查看。</div>
 <img src="/stream.mjpg" alt="等待相机画面…">
 </body></html>""".encode("utf-8")
 
