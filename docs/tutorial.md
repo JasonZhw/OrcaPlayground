@@ -291,7 +291,7 @@ python --version
 python -m pip show orca-lab orca-gym
 ```
 
-检查完成后，直接进入 [3.4.4 下载课程仓库](#download-repo) 下载 OrcaPlayground。
+检查完成后，直接进入 [3.4.4 下载课程仓库](#344-下载课程仓库) 下载 OrcaPlayground。
 
 #### 3.4.2 本地 Ubuntu：安装 Miniconda
 

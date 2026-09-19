@@ -7,11 +7,11 @@
 
 | 资料 | 入口 | 内容 |
 | --- | --- | --- |
-| 技术方案 | [工作坊目标与实验安排](docs/tutorial.md#workshop-plan) | 学习目标、技术路线、实验内容与完成标准 |
+| 技术方案 | [工作坊目标与实验安排](docs/tutorial.md#工作坊技术方案) | 学习目标、技术路线、实验内容与完成标准 |
 | 完整教程 | [Tutorial](docs/tutorial.md) | 安装、界面操作、资产准备、三个 Demo 与 FAQ |
 | 飞书详细文档 | [飞书文档](https://ucnj8k63v5wn.feishu.cn/wiki/TnwZwVptdi9r9MkmtSUc4OfCnzh?from=from_copylink) | 图文讲解与补充材料（推荐依照飞书文档进行学习，文档内有详细的视频教学） |
-| Demo视频 | [视频或动图](#demo) | 运行效果 |
-| 常见问题 | [FAQ 与排查顺序](docs/tutorial.md#faq) | 环境、资产、通信与控制问题 |
+| Demo视频 | [视频或动图](#demo-展示) | 运行效果 |
+| 常见问题 | [FAQ 与排查顺序](docs/tutorial.md#九faq) | 环境、资产、通信与控制问题 |
 | 官方说明 | [OrcaPlayground 官方 README](https://github.com/openverse-orca/OrcaPlayground/blob/release/26.7.1/README.md) | 安装说明、完整示例目录与扩展开发 |
 
 ## 你将完成什么
@@ -50,7 +50,7 @@
 
 ## 遇到问题
 
-先确认版本和 Python 环境，再检查项目目录、资产与 Layout、仿真状态、gRPC 连接，最后检查控制程序。完整步骤见 [FAQ](docs/tutorial.md#faq)。
+先确认版本和 Python 环境，再检查项目目录、资产与 Layout、仿真状态、gRPC 连接，最后检查控制程序。完整步骤见 [FAQ](docs/tutorial.md#九faq)。
 
 | 现象 | 优先检查 |
 | --- | --- |
