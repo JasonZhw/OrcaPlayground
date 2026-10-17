@@ -1,0 +1,12 @@
+{
+  "source": "/home/pc/ZXJ/SY/data/medication_sorting/scenes/drag_classfication_capture.json",
+  "source_sha256": "e0b178c18ac53e833c571fae6b831d5855e1817545e2029545ec3e0d96d65b79",
+  "output": "/home/pc/ZXJ/SY/data/medication_sorting/scenes/drag_classfication_bottles70.json",
+  "output_sha256": "db322ff25011f20f2208c025a30261e9b30db5d9c909a5a0b8309e9bfb3c63b1",
+  "bottle_relative_scale": 0.7,
+  "modified_actors": [
+    "calcium_gluconate_tablets_bottle_1",
+    "melatonin_tablet_bottle_1"
+  ],
+  "original_size_task_solved": false
+}

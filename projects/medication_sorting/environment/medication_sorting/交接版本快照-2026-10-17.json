@@ -1,0 +1,173 @@
+{
+  "记录用途": "原机交接审计快照，不是全量安装锁，不含账号凭据；不代表接收方电脑已经验收",
+  "生成时间": "2026-10-17T15:29:59.903631+08:00",
+  "原项目目录": "/home/pc/ZXJ/SY",
+  "python": "3.12.14",
+  "system": "Ubuntu 24.04.4 LTS",
+  "gpu": "NVIDIA GeForce RTX 5090, 580.159.03, 32607 MiB",
+  "base_versions": {
+    "orca-lab": "26.9.1",
+    "orca-gym": "26.9.1",
+    "mujoco": "3.12.0",
+    "numpy": "2.2.6",
+    "scipy": "1.16.2",
+    "pillow": "12.0.0",
+    "torch": "2.14.1",
+    "fastmcp": "4.0.1",
+    "httpx2": "2.12.0",
+    "websockets": "16.1.1",
+    "msgpack": "1.1.1",
+    "packaging": "26.3",
+    "pytest": "9.1.1",
+    "orcalab-pyside": "26.9.1",
+    "warp-lang": "1.18.0"
+  },
+  "training_layer_versions": {
+    "numpy": "1.26.4",
+    "jax": "0.5.3",
+    "jaxlib": "0.5.3",
+    "jax-cuda12-plugin": "0.5.3",
+    "jax-cuda12-pjrt": "0.5.3",
+    "flax": "0.10.2",
+    "orbax-checkpoint": "0.11.13",
+    "transformers": "4.53.2",
+    "lerobot": "0.1.0",
+    "torchvision": "0.29.1",
+    "wrapt": "1.17.3"
+  },
+  "upstream_commits": {
+    "software/OrcaPlayground": "a774fae0f0850780a14d1cca0c3018931d22e71d",
+    "software/openpi": "215abfb217dbac7d5f1273282331b9b1866c0479"
+  },
+  "lerobot_commit": "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5",
+  "collection": {
+    "accepted": 160,
+    "attempts": 295,
+    "complete": true,
+    "by_object": {
+      "calcium_gluconate_tablets_bottle_1": {
+        "attempts": 40,
+        "accepted": 40,
+        "required": 40
+      },
+      "melatonin_tablet_bottle_1": {
+        "attempts": 54,
+        "accepted": 40,
+        "required": 40
+      },
+      "fu_shi_gao_herb_drink_packaging_box_1": {
+        "attempts": 154,
+        "accepted": 40,
+        "required": 40
+      },
+      "pharyngitis_tablets_box_1": {
+        "attempts": 47,
+        "accepted": 40,
+        "required": 40
+      }
+    }
+  },
+  "first_policy_evaluation": {
+    "tasks": 40,
+    "successes": 10,
+    "success_rate": 0.25,
+    "scope": "每回合独立重置的单物品推理，不是四物品整轮",
+    "by_object": [
+      {
+        "target": "calcium_gluconate_tablets_bottle_1",
+        "task_count": 10,
+        "success_count": 1
+      },
+      {
+        "target": "melatonin_tablet_bottle_1",
+        "task_count": 10,
+        "success_count": 3
+      },
+      {
+        "target": "fu_shi_gao_herb_drink_packaging_box_1",
+        "task_count": 10,
+        "success_count": 3
+      },
+      {
+        "target": "pharyngitis_tablets_box_1",
+        "task_count": 10,
+        "success_count": 3
+      }
+    ]
+  },
+  "night_expert": {
+    "screening_rounds": 75,
+    "screening_successes": 0,
+    "review_rounds": 10,
+    "review_successes": 0,
+    "training_started": false,
+    "scope": "连续专家物理对照，不是VLA成绩"
+  },
+  "checkpoint": {
+    "path": "data/medication_sorting/checkpoints/pi05_g1_medication_sorting_lora/g1_four_medication_160_20261014_20k/19999",
+    "commit_metadata": {
+      "item_handlers": {
+        "assets": "openpi.training.checkpoints.CallbackHandler",
+        "params": "orbax.checkpoint._src.handlers.pytree_checkpoint_handler.PyTreeCheckpointHandler",
+        "train_state": "orbax.checkpoint._src.handlers.pytree_checkpoint_handler.PyTreeCheckpointHandler"
+      },
+      "metrics": {},
+      "performance_metrics": {},
+      "init_timestamp_nsecs": 1792104234906158800,
+      "commit_timestamp_nsecs": 1792104285367043000,
+      "custom_metadata": {}
+    },
+    "params_manifest_sha256": "bf33378d8745bcd72a40ec061a53ea5d57b0488bf715aadaae61d5721133f94d",
+    "params_metadata_sha256": "88464a384c524c50fa1a92c1685d23a79570c62807a0ccf021f5f9307fff137c",
+    "norm_stats": {
+      "assets/local/g1_four_medication_160_20261014_train/norm_stats.json": "83274c56368dda7a5dc89207301eaf0d695b3f2bf70149ee100fba2a1a69b5ed"
+    }
+  },
+  "verification": {
+    "tests": "569 passed in 5.78s",
+    "cpu_dependency_verify": "passed",
+    "gpu_training_rerun": false,
+    "friend_machine_validated": false
+  },
+  "sha256": {
+    "data/medication_sorting/scenes/drag_classfication.json": "bbb0cf936158fda9a76910a99a951d5342129181c7580341c861b1226137026d",
+    "data/medication_sorting/scenes/drag_classfication_bottles70.json": "db322ff25011f20f2208c025a30261e9b30db5d9c909a5a0b8309e9bfb3c63b1",
+    "data/medication_sorting/scenes/drag_classfication_bottles70.manifest.json": "3ed17263911afbc1f7c9e08120566b26207de61da557852b0b854e5e7043fe21",
+    "data/medication_sorting/scenes/drag_classfication_capture.json": "e0b178c18ac53e833c571fae6b831d5855e1817545e2029545ec3e0d96d65b79",
+    "data/medication_sorting/scenes/drag_classfication_fixed_base.json": "9a66bd9a6a7479b2a92c4c1bbdb5be01541ef5f5bd8547dcb445b79ad6021342",
+    "data/medication_sorting/scenes/fixed_base_working.json": "7b61b5f5f53dc39e0ea41779472d38277d984672a4db958f4a38f15dd74a7a73",
+    "environment/medication_sorting/requirements-base-reference.txt": "cf8d4a620c11355f3ad84aa109ed093d3d091d7f54b7a938675a0e229d550fe0",
+    "tools/medication_sorting/check_training_readiness.py": "6c8f7d760997cbdae4cd4572849b470b5e055230d706704b598f29507b76630f",
+    "tools/medication_sorting/collect_balanced.py": "8501d2bd6416ff500db04e641568ff1ce5840267a7027c1f5f57f77d09758c56",
+    "tools/medication_sorting/collect_episodes.py": "eca1e75eb97e48203634e0bfcb4991c7c7952c550597a330c4d6f0e28c8b3f49",
+    "tools/medication_sorting/compare_action_chunks.py": "6026afe43020e480b810a47f96f973330d4a28c8cbb06fcb73dad5f949c4faae",
+    "tools/medication_sorting/continuous_expert.py": "99229874cfe84e8b87e0cecebda0d67e4d7bd464df0fd4a51fde6fc07f947c8c",
+    "tools/medication_sorting/convert_episodes.py": "897016a1c055b164d5c704fa59ceacea05994e0b730df94b857d396fa2002d46",
+    "tools/medication_sorting/download_pi05.py": "08aa072f60a94039b0112ff44c376e27ce5e123090bc1d8e2ff221b69c372cd5",
+    "tools/medication_sorting/evaluate_policy.py": "f4bfcff2b1e512fe4d0a8532430967b66d321a5971566055e9b9681bcce8819f",
+    "tools/medication_sorting/fixed_layout.py": "8db2a5eb83e4b382b7ff826ff0589338f522174cf1bdcf7d6e96c205841ae75b",
+    "tools/medication_sorting/geometry_audit.py": "73e33c2c7e3498e1f428c8c286d412f1842af5d1158e469fc2cf5802b2d128b6",
+    "tools/medication_sorting/geometry_probes.py": "8b553bd6e818dff128e333dc1ea699f06c339d8fded54ba700f40f9ba854195b",
+    "tools/medication_sorting/infer_policy.py": "4b728e2f72ebe63325e01a60da3d7524f44db586689a178e32fe5e07dadc46a2",
+    "tools/medication_sorting/inspect_scene.py": "b88e5469a4d089ffe0612c6d6989a566edceb557fecfca412d00ac7fc83b2c92",
+    "tools/medication_sorting/night_expert_search.py": "c591c53ef9b98128fafe380311c8286180f7f51aa037df1a139bb722770f44fd",
+    "tools/medication_sorting/night_watchdog.py": "293553334909288787f3b6377c755298873911e357c93028fc0417257c335460",
+    "tools/medication_sorting/physics_diagnostics.py": "5f5dc8ae0f192d897d294e46f02f5082d4dc93bbb454bfbc066016456dd2b3c2",
+    "tools/medication_sorting/pi05_adapter.py": "2089ff16bd85b8eed670f977c870b294911a084ff65e999d1da96d7a8d86880a",
+    "tools/medication_sorting/pi05_python.sh": "18f2c708692fdf270b4ce7035705d9bc719efec3df7a339f3edbf5a407b2aa01",
+    "tools/medication_sorting/prepare_scene.py": "d80cca8d87119678c3a1c1549ae18792f9d07060cda08a9f854da69f4370c6d8",
+    "tools/medication_sorting/randomization.py": "aea0d521d183fc2a564f329ffe8ba9b3eb199b31f4d01c752373416993d60ab7",
+    "tools/medication_sorting/rendered_rgb.py": "b25432d70955cf02b3d9236a788e5ff4b973382dd5764055196059ac77823218",
+    "tools/medication_sorting/robot_control.py": "d04ba7dd2ce55f7929750d7ce9cef306c21babcc2d580bf318f3c8d3afa7b7b6",
+    "tools/medication_sorting/run_expert.py": "566219d905eccc1603c591413f062e83b86700a141db12698022920220d666b2",
+    "tools/medication_sorting/run_four_objects.py": "32bc8ab2de87a28c21e65f59f45dd904e41319d76cae90904e513c631c37820b",
+    "tools/medication_sorting/run_randomized_experiment.py": "a30b522d96bd8dc3f1c76a620c1b30125c00edfb8aa8e06430ab955e8efa16b8",
+    "tools/medication_sorting/scaled_layout.py": "4c34c1590d7972358567b6c8ebabde5229572fdc3441f3534946f1ee190d0288",
+    "tools/medication_sorting/scene_utils.py": "144c629cd5e0f238082286026f0d82a80fede85c78e8b2fd99eb592719fe9340",
+    "tools/medication_sorting/setup_pi05.py": "9ae017aabd2c82c14b6daede5eb4e28e82b8563e54f2d7cf00e97d0676b5daa9",
+    "tools/medication_sorting/split_episodes.py": "2797ed19a06c4fef6516351ba53d3c3faeb85ba186895b32aa04e2d3c38416b6",
+    "tools/medication_sorting/start_orcalab.sh": "a5845cb2d27f164d29a6f410034593f78c0d7f82b1b5b887b1b4dc8210641389",
+    "tools/medication_sorting/task_specs.py": "c7ae200581ed50884f871a1e69b9574ab500fd05803063b903666d76df654538",
+    "tools/medication_sorting/verify_episodes.py": "0a3080e5c5ec9acda8681f2fe1a21e0c3e089f74c2706fee1a9ec400f4e66ebd"
+  }
+}

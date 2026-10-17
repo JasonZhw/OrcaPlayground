@@ -1,0 +1,26 @@
+/.venv/
+/pi05-venv/
+/software/
+/runtime/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+MUJOCO_LOG.TXT
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+
+# 只保存场景引用和公开的基座下载清单，不保存轨迹、权重或实际资产。
+/data/*
+!/data/medication_sorting/
+/data/medication_sorting/*
+!/data/medication_sorting/scenes/
+/data/medication_sorting/scenes/*
+!/data/medication_sorting/scenes/*.json
+!/data/medication_sorting/reports/
+/data/medication_sorting/reports/*
+!/data/medication_sorting/reports/pi05-download-manifest.json

@@ -1,0 +1,18 @@
+# 药品分类项目原机核心包参考，核对日期：2026-10-17。
+# 不是全量传递依赖锁，也不是跨硬件运行保证；配合交接手册安装与验证。
+# 先从 PyTorch cu130 索引安装 torch==2.14.1，再安装本文件。
+# OrcaLab 初次启动完成其官方 PySide 插件初始化后，再安装 pi05-deps。
+# JAX / LeRobot 依赖必须通过 setup_pi05.py 安装，不能加进本文件。
+orca-lab==26.9.1
+orca-gym==26.9.1
+numpy==2.2.6
+scipy==1.16.2
+mujoco==3.12.0
+pillow==12.0.0
+PySide6==6.9.2
+fastmcp==4.0.1
+httpx2==2.12.0
+websockets==16.1.1
+msgpack==1.1.1
+packaging==26.3
+pytest==9.1.1

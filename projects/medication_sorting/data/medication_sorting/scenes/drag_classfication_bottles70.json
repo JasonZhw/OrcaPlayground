@@ -1,0 +1,791 @@
+{
+  "version": "4.0",
+  "level": {
+    "name": "nursinghome",
+    "path": "levels/e071469a36d3c8aa/nursinghome/nursinghome/nursinghome.spawnable",
+    "package_reference": {
+      "name": "NursingHome",
+      "tech_name": "nursinghome",
+      "author": "Orca",
+      "project_name": "nursinghome"
+    }
+  },
+  "viewport_camera_transform": {
+    "position": [
+      0.2932286858558655,
+      -2.9648687839508057,
+      5.043719291687012
+    ],
+    "rotation": [
+      0.20860206240535467,
+      -0.062169087409029024,
+      0.27876447508347824,
+      -0.9353665332704575
+    ]
+  },
+  "actors": [
+    {
+      "name": "Group",
+      "path": "/Group",
+      "type": "GroupActor",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "children": [
+        {
+          "name": "StaticObjects",
+          "path": "/Group/StaticObjects",
+          "type": "GroupActor",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": 1.0
+          },
+          "children": [
+            {
+              "name": "Props",
+              "path": "/Group/StaticObjects/Props",
+              "type": "GroupActor",
+              "transform": {
+                "position": [
+                  0.0,
+                  0.0,
+                  4.0
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 1.0
+              },
+              "children": [
+                {
+                  "name": "ABSNightstand",
+                  "path": "/Group/StaticObjects/Props/ABSNightstand",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      1.7236779928207395,
+                      1.679091215133667,
+                      0.0
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/me_nightstand/absnightstand"
+                },
+                {
+                  "name": "Monitor",
+                  "path": "/Group/StaticObjects/Props/Monitor",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      -0.2851717174053192,
+                      1.9514909982681272,
+                      1.5880961418151855
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/me_nightstand/monitor"
+                },
+                {
+                  "name": "Nightstand",
+                  "path": "/Group/StaticObjects/Props/Nightstand",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      -0.7990065813064575,
+                      1.717158317565918,
+                      -0.00340127944946289
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/me_nightstand/nightstand"
+                },
+                {
+                  "name": "table_01",
+                  "path": "/Group/StaticObjects/Props/table_01",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      -0.512662410736084,
+                      0.8708502650260925,
+                      0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      1.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/els/table_01"
+                },
+                {
+                  "name": "Bed",
+                  "path": "/Group/StaticObjects/Props/Bed",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      0.2112494856119156,
+                      0.9364639520645142,
+                      -0.0007910728454589844
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/bed/bed"
+                }
+              ]
+            },
+            {
+              "name": "Furniture",
+              "path": "/Group/StaticObjects/Furniture",
+              "type": "GroupActor",
+              "transform": {
+                "position": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 1.0
+              },
+              "children": [
+                {
+                  "name": "Sofa02",
+                  "path": "/Group/StaticObjects/Furniture/Sofa02",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      -2.1181864738464355,
+                      -0.3935720324516296,
+                      4.038890838623047
+                    ],
+                    "rotation": [
+                      0.7071071107358423,
+                      0.0,
+                      0.0,
+                      0.7071064516370992
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/sofa02/sofa02"
+                },
+                {
+                  "name": "U_Curtain_merged",
+                  "path": "/Group/StaticObjects/Furniture/U_Curtain_merged",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      1.104193091392517,
+                      1.7802538871765137,
+                      6.82600212097168
+                    ],
+                    "rotation": [
+                      0.999390830577064,
+                      0.0,
+                      0.0,
+                      0.03489939481546997
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/u_track/u_curtain_merged"
+                },
+                {
+                  "name": "U_Curtain_merged_1",
+                  "path": "/Group/StaticObjects/Furniture/U_Curtain_merged_1",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      1.1053320169448853,
+                      1.4470748901367188,
+                      6.82600212097168
+                    ],
+                    "rotation": [
+                      0.999390830577064,
+                      0.0,
+                      0.0,
+                      0.03489939481546997
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/u_track/u_curtain_merged"
+                },
+                {
+                  "name": "Cabinet01",
+                  "path": "/Group/StaticObjects/Furniture/Cabinet01",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      2.2285141944885254,
+                      -3.63446307182312,
+                      4.0
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/cabinet/cabinet01"
+                },
+                {
+                  "name": "Cabinet02",
+                  "path": "/Group/StaticObjects/Furniture/Cabinet02",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      -2.156090259552002,
+                      -3.6233181953430176,
+                      4.0
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/cabinet/cabinet02"
+                },
+                {
+                  "name": "Desk",
+                  "path": "/Group/StaticObjects/Furniture/Desk",
+                  "type": "AssetActor",
+                  "transform": {
+                    "position": [
+                      0.2513577938079834,
+                      -3.63244104385376,
+                      4.0
+                    ],
+                    "rotation": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": 1.0
+                  },
+                  "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/desk/desk"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "InteractiveObjects",
+          "path": "/Group/InteractiveObjects",
+          "type": "GroupActor",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": 1.0
+          },
+          "children": [
+            {
+              "name": "Cuvette",
+              "path": "/Group/InteractiveObjects/Cuvette",
+              "type": "AssetActor",
+              "transform": {
+                "position": [
+                  1.8306564092636108,
+                  1.5556830167770386,
+                  4.891963958740234
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 1.0
+              },
+              "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/me_cuvette/cuvette"
+            },
+            {
+              "name": "TestTubeRack",
+              "path": "/Group/InteractiveObjects/TestTubeRack",
+              "type": "AssetActor",
+              "transform": {
+                "position": [
+                  1.818555235862732,
+                  1.529235601425171,
+                  4.827831268310547
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 1.0
+              },
+              "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/me_cuvette/testtuberack"
+            },
+            {
+              "name": "Wheelchair",
+              "path": "/Group/InteractiveObjects/Wheelchair",
+              "type": "AssetActor",
+              "transform": {
+                "position": [
+                  -1.7619388103485107,
+                  -1.8944785594940186,
+                  4.012634754180908
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 1.0
+              },
+              "asset_path": "assets/e071469a36d3c8aa/nursinghome/yly/props/wheelchair/wheelchair"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unitree_g1_1",
+      "path": "/unitree_g1_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.6333129405975342,
+          -3.652959108352661,
+          4.0
+        ],
+        "rotation": [
+          0.7071067513842252,
+          0.0,
+          0.0,
+          -0.7071068109888685
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_with_gripper_usda",
+      "entity_overrides": [
+        {
+          "entity_path": [
+            {
+              "name": "mujoco_wrap",
+              "index": 0
+            },
+            {
+              "name": "rootPrim",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{E544201F-83F6-419F-B3DD-1D6559FFDFB0}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "jointType",
+                  "value": "fixed",
+                  "type": "enum"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "entity_path": [
+            {
+              "name": "mujoco_wrap",
+              "index": 0
+            },
+            {
+              "name": "rootPrim",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "waist_yaw_link_rev_1_0",
+              "index": 7
+            },
+            {
+              "name": "waist_roll_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "torso_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "right_shoulder_pitch_link",
+              "index": 8
+            },
+            {
+              "name": "right_shoulder_roll_link",
+              "index": 1
+            },
+            {
+              "name": "right_shoulder_yaw_link",
+              "index": 0
+            },
+            {
+              "name": "right_elbow_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_roll_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_pitch_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_yaw_link",
+              "index": 2
+            },
+            {
+              "name": "arm_r_end_link",
+              "index": 0
+            },
+            {
+              "name": "camera_right_body1",
+              "index": 2
+            },
+            {
+              "name": "camera_right_body2",
+              "index": 1
+            },
+            {
+              "name": "cameras",
+              "index": 1
+            },
+            {
+              "name": "camera_right",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "NearClipDistance",
+                  "value": 0.15000000596046448,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "entity_path": [
+            {
+              "name": "mujoco_wrap",
+              "index": 0
+            },
+            {
+              "name": "rootPrim",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "waist_yaw_link_rev_1_0",
+              "index": 7
+            },
+            {
+              "name": "waist_roll_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "torso_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "head_camera1",
+              "index": 7
+            },
+            {
+              "name": "head_camera2",
+              "index": 1
+            },
+            {
+              "name": "cameras",
+              "index": 1
+            },
+            {
+              "name": "head_cam",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "NearClipDistance",
+                  "value": 0.20000000298023224,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "purple_plastic_crates_1",
+      "path": "/purple_plastic_crates_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.7412710785865784,
+          -3.534006118774414,
+          4.749999523162842
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 0.41999998688697815
+      },
+      "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_purple"
+    },
+    {
+      "name": "blue_plastic_crates_1",
+      "path": "/blue_plastic_crates_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.21539206802845,
+          -3.524895668029785,
+          4.749999523162842
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 0.3499999940395355
+      },
+      "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue"
+    },
+    {
+      "name": "calcium_gluconate_tablets_bottle_1",
+      "path": "/calcium_gluconate_tablets_bottle_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.5588886737823486,
+          -3.56704044342041,
+          4.749999523162842
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 0.7
+      },
+      "asset_path": "assets/e071469a36d3c8aa/medical/medical/medical_32/medical_32"
+    },
+    {
+      "name": "melatonin_tablet_bottle_1",
+      "path": "/melatonin_tablet_bottle_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.5668463110923767,
+          -3.7047250270843506,
+          4.75
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 0.7
+      },
+      "asset_path": "assets/e071469a36d3c8aa/medical/medical/medical_31/medical_31"
+    },
+    {
+      "name": "fu_shi_gao_herb_drink_packaging_box_1",
+      "path": "/fu_shi_gao_herb_drink_packaging_box_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.39239147305488586,
+          -3.6659371852874756,
+          4.750000476837158
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/e071469a36d3c8aa/medical/medical/medical_23/medical_23",
+      "entity_overrides": [
+        {
+          "entity_path": [
+            {
+              "name": "Medical_23",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "uniformScale",
+                  "value": 0.5,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pharyngitis_tablets_box_1",
+      "path": "/pharyngitis_tablets_box_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          0.46673348546028137,
+          -3.6368422508239746,
+          4.749999523162842
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/e071469a36d3c8aa/medical/medical/medical_12/medical_12"
+    }
+  ],
+  "package_references": [
+    {
+      "name": "NursingHome",
+      "tech_name": "nursinghome",
+      "author": "Orca",
+      "project_name": "nursinghome"
+    },
+    {
+      "name": "unitree_g1_gripper",
+      "tech_name": "g1_pick_with_gripper",
+      "author": "admin_test_2",
+      "project_name": "default_project"
+    },
+    {
+      "name": "AutoProductionLine_Warehouse",
+      "tech_name": "autoproductionline_warehouse",
+      "author": "Orca",
+      "project_name": "autoproductionline_warehouse"
+    },
+    {
+      "name": "Medical",
+      "tech_name": "medical",
+      "author": "Orca",
+      "project_name": "medical"
+    }
+  ]
+}
