@@ -1,0 +1,28 @@
+{
+  "task_id": "two_parts_to_wooden_tray",
+  "description": "同一回合先搬灰色零件，再搬蓝色底座，两件最终都在左侧木托盘中。",
+  "robot": {
+    "base_body": "unitree_g1_1_pelvis",
+    "tcp_sites": ["unitree_g1_1_ee_center_site_r", "unitree_g1_1_ee_center_site_l"]
+  },
+  "tray": {
+    "body_suffix": "basket_01",
+    "floor_size_xyz_m": [0.538, 0.372, 0.021],
+    "inner_xy_min": [-0.249648, -0.165177],
+    "inner_xy_max": [0.249647, 0.165792],
+    "edge_clearance_m": 0.02,
+    "release_clearance_m": 0.005
+  },
+  "objects": [
+    {
+      "id": "gray_part",
+      "body_suffix": "Group_Interactive_Objcets_SelfTappingScrew_Nut_bodyjoint",
+      "placement_center_xy": [0.19, -0.10]
+    },
+    {
+      "id": "blue_base",
+      "body_suffix": "ScrewHole",
+      "placement_center_xy": [0.09, -0.075]
+    }
+  ]
+}

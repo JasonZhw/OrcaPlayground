@@ -1,0 +1,13 @@
+{
+  "description": "All eight user-accepted demonstrations; full 50 Hz trajectories, no augmentation or holdout split.",
+  "episodes": [
+    {"path": "pilot_20261027_212538/episode_0000", "layout_group": "pilot", "quality_notes": []},
+    {"path": "pilot_20261027_212538/episode_0001", "layout_group": "pilot", "quality_notes": ["repeated_state_action_trajectory"]},
+    {"path": "layout_20261027_221117/episode_0000", "layout_group": "distractor_shift", "quality_notes": ["same_state_action_as_pilot_different_distractors"]},
+    {"path": "layout_20261027_221117/episode_0001", "layout_group": "distractor_shift", "quality_notes": ["repeated_state_action_trajectory"]},
+    {"path": "xshift_20261027_222933/episode_0000", "layout_group": "x_shift", "quality_notes": []},
+    {"path": "xshift_20261027_222933/episode_0001", "layout_group": "x_shift", "quality_notes": ["repeated_state_action_trajectory"]},
+    {"path": "xyshift_20261027_225137_retry04/episode_0000", "layout_group": "xy_shift", "quality_notes": ["user_accepted_task_completion", "strict_retention_failed", "no_return_home"]},
+    {"path": "layout_20261027_232508/episode_0000", "layout_group": "latest_xy_shift", "quality_notes": []}
+  ]
+}

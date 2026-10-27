@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "purpose": "Left arm side-rest preparation pose; recheck collisions after any layout change",
+  "units": "radians",
+  "joint_names": [
+    "unitree_g1_1_left_shoulder_pitch_joint",
+    "unitree_g1_1_left_shoulder_roll_joint",
+    "unitree_g1_1_left_shoulder_yaw_joint",
+    "unitree_g1_1_left_elbow_joint",
+    "unitree_g1_1_left_wrist_roll_joint",
+    "unitree_g1_1_left_wrist_pitch_joint",
+    "unitree_g1_1_left_wrist_yaw_joint"
+  ],
+  "initial_joint_positions": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "waypoints": [
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      -0.6,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.8,
+      0.2,
+      0.0,
+      -0.6,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.8,
+      0.2,
+      0.0,
+      0.4,
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "segment_names": [
+    "retract_elbow",
+    "withdraw_arm",
+    "lower_hand"
+  ],
+  "segment_duration_s": [
+    3,
+    4,
+    4
+  ],
+  "final_hold_s": 3.0,
+  "other_joint_targets": "Retain initial position targets; do not zero the whole action vector",
+  "validation": {
+    "date": "2026-10-27",
+    "source_xml_sha256": "3117c9407e88613778e65fd7f738fad393f46235d2517b3101b71a02711bb22e",
+    "base_fixed": true,
+    "waist_fixed": false,
+    "bias_compensation": true,
+    "position_feedback_gain": 5.0,
+    "physics_dt_s": 0.002,
+    "control_dt_s": 0.02,
+    "offline_passed": true,
+    "studio_execution_passed": true,
+    "studio_readback_error_m": 0.0,
+    "external_contact_samples": 0,
+    "scope": "Only left-arm lowering in the checked original layout; no right-arm transport certification",
+    "evidence_directory": "outputs/left_arm_down_live_20261027"
+  }
+}
