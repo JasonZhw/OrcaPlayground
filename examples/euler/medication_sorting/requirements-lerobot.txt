@@ -1,0 +1,15 @@
+# Separate CPU conversion environment; do not install into the simulation env.
+# Install CPU torch/torchvision first, then the pinned LeRobot source with --no-deps.
+# This is a dataset conversion environment, not a complete LeRobot training install.
+numpy==1.26.4
+av==15.1.0
+datasets==3.6.0
+pyarrow==20.0.0
+torch==2.7.1
+torchvision==0.22.1
+huggingface-hub>=0.27.1,<1
+draccus==0.10.0
+jsonlines==4.0.0
+pillow>=10
+packaging>=24.2
+PyYAML>=6

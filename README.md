@@ -1,343 +1,181 @@
-# OrcaPlayground
+# G1 双臂药品分类：自动规划与数据采集
 
-OrcaGym 示例代码仓库，已集成 OrcaLab 支持。
+在 OrcaLab 26.9.1 中，左臂把两只药瓶放入左侧紫框，右臂把两只药盒放入右侧蓝框。两臂交替抓放，只要求物品进入对应框内，不要求放置后的姿态。
 
-## 🎯 快速开始
+开发分支：[`handoff/medication-sorting`](https://github.com/JasonZhw/OrcaPlayground/tree/handoff/medication-sorting)。当前提供专家运动规划、同步数据采集和 LeRobot v2.1 导出；双臂 ACT / π0.5 训练适配与异步模型推理尚未接入。
 
-### 方式 1：使用 OrcaLab 启动（推荐）⭐
+## 演示与初始状态
 
-本项目已配置 OrcaLab 集成，可以直接在 OrcaLab 中启动示例。
+本次演示使用缩小后的药盒和新版平滑运动代码，四件药品全部完成入框，原始数据检查通过。视频是专家运动规划执行结果，尚不是模型推理。
 
-#### 步骤 1：安装 OrcaLab
+[![双臂药品分类三视角预览](docs/assets/medication_sorting/preview.png)](docs/assets/medication_sorting/preview.mp4)
 
-```bash
-pip install orca-lab
+[完整视频（1倍速，3分28秒）](docs/assets/medication_sorting/preview.mp4) · [原始OrcaLab布局JSON](docs/assets/medication_sorting/drag_classfication.json)
+
+本次示范采用基准位置加轻微扰动（seed=100，XY ±5mm、朝向 ±3°），保留用户缩小后的药盒尺寸。每路相机仍是640×480；预览按原尺寸拼接为1920×512，含32像素标题栏，不裁剪、不缩放。共10,415帧/路、50Hz仿真时间，原始示范约2.47GB。同步录制执行约16分钟，预览按仿真时间恢复正常速度。
+
+相对录制前读取的布局，两只药瓶平移约4cm，两只药盒平移约13～14cm；±5mm是相对基准位置的扰动，并非相对原布局的总位移。
+
+该布局已成功验证；此前保存位置下的药瓶接近路径被碰撞检查拦住，不能保证任意摆放均成功。新位置先试跑，再录制。
+
+仓库保留用户提供的完整原始布局 `drag_classfication.json`，其药品位置与视频中的基准扰动摆放不同。复现视频请使用下文的 `--layout-mode baseline --seed 100` 命令；使用布局需要对应订阅资产，文件尚未重新加载验证。
+
+每次采集产生的 `initial_layout.json` 记录四件药品的世界坐标（米）和四元数（w,x,y,z）。它用于核对摆放，不是可直接导入OrcaLab的完整Layout；程序当前读取OrcaLab已保存布局，没有 `--layout-json` 导入参数。
+
+## 仓库逻辑
+
+主代码位于 [`examples/euler/medication_sorting/`](examples/euler/medication_sorting/README.md)，按实际采集流程分为五个主文件：
+
+| 文件 | 负责的部分 | 输入 → 输出 |
+|---|---|---|
+| [main.py](examples/euler/medication_sorting/main.py) | 统一启动、模式选择、编号、容量与进程管理 | 启动命令 → 一条采集或试跑结果 |
+| [workflow.py](examples/euler/medication_sorting/workflow.py) | 场景读取、目标计算、任务编排 | 场景位姿和几何 → 抓取位置/姿态、抓放阶段 |
+| [planning.py](examples/euler/medication_sorting/planning.py) | IK关节求解与路径规划 | 夹爪目标、当前关节状态 → 避碰关节路径和限速采样 |
+| [execution.py](examples/euler/medication_sorting/execution.py) | 固定底盘、驱动手臂和夹爪、检查执行状态 | 动作目标 → 仿真运动与实测状态 |
+| [recording.py](examples/euler/medication_sorting/recording.py) | 同步录制、英文任务与数据协议 | 三路画面、状态和动作 → 原始示范及完整性报告 |
+
+```text
+main启动 → workflow读取场景并计算目标 → planning求解关节角与路径
+                                         ↓
+                               execution逐步执行
+                                         ↕
+                               recording逐帧同步记录
+                                         ↓
+                         检查入框与数据完整性 → 保存结果
 ```
 
-#### 步骤 2：激活 orca conda 环境并安装基础依赖
+`workflow.py` 合并原来的run、scene、task和targets逻辑。一次抓放为：接近 → 下探 → 闭合并保持 → 抬升 → 搬到框上方 → 下放 → 张开 → 撤回。每阶段重新规划，夹爪保持上一条闭合指令直到明确释放。
+
+路径采样使用五次平滑曲线，常规关节速度上限0.4rad/s、加速度上限0.8rad/s²；下放与撤回分别降到0.2rad/s、0.4rad/s²。相邻阶段从上一条关节指令继续，避免把跟踪误差直接变成指令跳变。不录制试跑最高按50Hz墙钟步进，慢渲染后不追赶补步；规划计算仍可能产生等待。碰撞路径的中间路点仍会减速到零，保留到位与抓持停顿，不是整条轨迹无停顿运行。
+
+入框点根据框底与物品实际几何计算：药瓶底部距框底约8cm，药盒约5cm；XY落点按物体轮廓留出8mm边距。到框上方后保持夹紧并慢速下放，到位后仍夹紧停留，再在1.2秒内逐渐松爪，等待0.5秒后撤回。药瓶保留较高的释放位置，是因为侧抓手腕在更低位置会碰到框沿。
+
+专家通过仿真读取目标真值，不是用摄像头检测药品。当前规划器为多初值IK＋RRT-Connect，未使用CuRobo。改变已有药品的XY和朝向后会重新规划，但新资产、明显的尺寸变化、不可达或碰撞布局仍需校准和验证。
+
+辅助工具：`preview.py` 生成预览视频；`lerobot_export.py` 导出训练格式；`batch.py` 做小批量随机试验；`collect_dataset.py` 支持预设计划、容量管理与续采。日常手动微调布局只需启动 `main.py`。
+
+## 环境准备
+
+需要 OrcaLab 26.9.1、Python 3.12，以及带夹爪G1的 `nursinghome / drag_classfication` 场景。机器人名称为 `unitree_g1_1`；三路相机为 `head_cam`、`camera_left`、`camera_right`。项目与订阅资产需要另外准备，不包含在本仓库中。
 
 ```bash
-# 激活 orca 环境（本项目推荐的环境名称）
-conda activate orca
-
-# 进入项目目录
+# 已有本机可用环境时直接激活。
+conda activate orcalab_9_1
 cd /path/to/OrcaPlayground
 
-# 安装基础依赖
-pip install -r requirements.txt
+# 新环境安装本模块依赖，需官方包源能提供匹配版本。
+python -m pip install -r examples/euler/medication_sorting/requirements-collection.txt
+
+# 检查必要接口。
+python -c "from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv; from orca_gym.core.euler.orca_studio_bridge import OrcaStudioBridge; import av; print('imports OK')"
 ```
 
-如果你要运行重依赖样例，再额外安装对应目录下的依赖：
+本机当前开发目录是 `/home/jason77/SY/OrcaPlayground-medication-sorting`。新服务器的完整建环境步骤见 [部署与手动工作流](examples/euler/medication_sorting/MANUAL_WORKFLOW.md)。数采需要OrcaLab画面渲染，建议采集程序与OrcaLab同机；只做模型训练时无需运行仿真画面。
+
+## 启动与采集
+
+先打开场景，将四件药品放回桌面、保存Layout、保持OrcaLab显示。同一仿真只运行一个控制程序。
+
+**1. 检查场景。** 不驱动机器人，查看输出的 `scene_report.json`。
 
 ```bash
-# 例如：fluid / cloth
-pip install -r examples/embodied/fluid/requirements.txt
-pip install -r examples/embodied/cloth/requirements.txt
-
-# 或使用 setuptools extras（适合源码开发）
-pip install -e ".[fluid]"
-pip install -e ".[cloth]"
+python -m examples.euler.medication_sorting.main --mode inspect \
+  --output "$HOME/med_runs/inspect_$(date +%Y%m%d_%H%M%S)"
 ```
 
-#### 步骤 3：在当前目录启动 OrcaLab
+**2. 试跑动作。** 使用当前布局，不录制；`--object herbbox` 可只测试草本饮品药盒。其他对象为 `calcium`、`melatonin`、`pharyngitis`，默认 `all`。
 
 ```bash
-# 在项目根目录启动 OrcaLab（会自动加载 .orcalab/config.toml）
-orcalab .
-
-# 或者直接启动（默认使用当前目录作为工作目录）
-orcalab
+python -u -m examples.euler.medication_sorting.main --mode run --execute \
+  --layout-mode current \
+  --output "$HOME/med_runs/test_$(date +%Y%m%d_%H%M%S)"
 ```
 
-OrcaLab 会自动加载工作目录下的 `.orcalab/config.toml` 配置文件。
+控制台会输出 `GRASP_TARGET`，并在运行目录写入 `grasp_targets.json`，记录每件物品实际抓取前的物体位置、夹爪抓取位置、接近点和旋转矩阵。后面的 `plans.json` 则记录各阶段关节路径。
 
-#### 步骤 4：在 OrcaLab 中启动示例
-
-1. 在 OrcaLab 界面中选择 **外部程序**（External Programs）
-2. 从列表中选择对应的示例程序（完整列表见 [.orcalab/config.toml](.orcalab/config.toml)）：
-   - `Empty Loop Simulation` - 空循环仿真
-   - `run_character` - 角色仿真
-   - `run_wheeled_chassis` - 轮式底盘仿真（差速驱动）
-   - `run_ackerman` - 阿克曼转向底盘仿真
-   - `run_xbot_orca` - XBot 双足机器人仿真
-   - `run_g1` - G1 人形机器人仿真
-   - `zq_sa01` - ZQ SA01 人形仿真
-   - `run_actors` - Actor 场景复制示例
-   - `run_lights` - 灯光场景复制示例
-   - `run_fluid_sim` - 流体仿真
-
-配置文件位置：`.orcalab/config.toml`
-
- **终端输出提醒**
->
-> 当前仓库启动、扫描、报错和退出信息都会输出到**终端**。
->
-> 如果程序没有按预期运行，请优先点击界面左下角的**终端按钮**查看输出日志和报错信息。
-
-### 方式 2：命令行启动
-
-
+**3. 复位并保存布局，再采集一条。** 这一条命令包含规划、执行、录制和校验，不需要另外启动录像程序。
 
 ```bash
-# 安装基础依赖
-pip install -r requirements.txt
-
-# 按需安装额外依赖（示例）
-pip install -r examples/embodied/fluid/requirements.txt
-
-# 或使用 setuptools extras（示例）
-pip install -e ".[fluid]"
-
-# 运行示例（参考各示例目录下的 README.md）
-python examples/embodied/character/run_character.py
-python examples/embodied/xbot/run_xbot_orca.py
-python examples/embodied/fluid/run_fluid_sim.py
+python -u -m examples.euler.medication_sorting.main \
+  --dataset-root "$HOME/datasets/g1_med_sort_v2" \
+  --execute
 ```
 
-## 📦 项目结构
+成功后检查视频，复位、微调药品位置或朝向并保存Layout，再执行同一命令。程序自动创建新编号，不覆盖已有条目。验证布局增加 `--split val`，按整条布局留出验证集。
 
-```
-OrcaPlayground/
-├── examples/              # 示例代码目录（每个样例自包含 env 子类 + 入口脚本）
-│   ├── euler/             #   Euler 体系教程（01_hello_euler ~ 11_scene_config）
-│   ├── scene_building/    #   场景构建教程（资产加载 / 场景组装 / 灯光 / 随机化）
-│   ├── embodied/          #   具身场景样例（已迁移 Euler 体系的机器人/角色/流体仿真）
-│   │   ├── _common/       #     公共工具（场景模型扫描等，供 embodied 下样例使用）
-│   │   ├── character/     #     角色仿真（含 README.md）
-│   │   ├── d12/           #     D12 双臂机器人（demo 脚本轨迹 + act ACT 策略，含 README.md）
-│   │   ├── drone_driver/  #     无人机推力驱动仿真（含 README.md）
-│   │   ├── fluid/         #     流体仿真（含 README.md，含 fluid_stats 子模块）
-│   │   ├── g1/            #     G1 人形（含 README.md）
-│   │   ├── replicator/    #     场景复制：Actor / Light（含 README.md）
-│   │   ├── wheeled_chassis/  #  轮式底盘：差速 + 阿克曼（含 README.md）
-│   │   ├── xbot/         #     XBot 双足机器人（含 README.md）
-│   │   └── zq_sa01/      #     ZQ SA01 人形（含 README.md）
-│   ├── orca_locomotion/   #   OrcaLocomotion：Go2 / G1 策略回放（PyPI 包，含 README.md）
-│   ├── LEGACY_RL.md       #   已移除的 RL 样例（ant_rl/franka_rl/legged_gym）迁移说明
-│   └── CROSS_REFERENCES.md
-├── .orcalab/              # OrcaLab 配置文件
-│   └── config.toml        # 外部程序配置
-└── requirements.txt       # Python 基础依赖
-```
+默认数据目录上限25GB、磁盘空闲预留4GB、下一条预算2.5GB。失败记录保留并占用容量，不能作为成功训练示范。主入口每次只采一条，结束后提示你调整布局。
 
-## 📚 示例说明
+`current` 保留当前保存的位置；试跑模式中的 `baseline` 使用脚本基准摆放。初期建议用当前布局逐条验证。需要自动扰动时在 `--mode run` 下指定 `--xy-jitter 0.005 --yaw-jitter-deg 3 --seed 100`，单位分别是米和度；随机化不保证所有摆放都可抓取。
 
-所有示例的详细使用说明请查看各目录下的 `README.md`：
-
-- **角色仿真** - [`examples/embodied/character/README.md`](examples/embodied/character/README.md)：Remy 角色键盘 / 路径点控制
-- **轮式底盘** - [`examples/embodied/wheeled_chassis/README.md`](examples/embodied/wheeled_chassis/README.md)：差速驱动 + 阿克曼转向
-- **XBot 机器人** - [`examples/embodied/xbot/README.md`](examples/embodied/xbot/README.md)：基于 humanoid-gym 预训练模型的双足行走
-- **D12 双臂机器人** - [`examples/embodied/d12/README.md`](examples/embodied/d12/README.md)：脚本轨迹回放（[demo](examples/embodied/d12/demo/README.md)）+ ACT 策略推理（[act](examples/embodied/d12/act/README.md)）
-- **无人机推力驱动仿真** - [`examples/embodied/drone_driver/README.md`](examples/embodied/drone_driver/README.md)：CTBR 控制器 + 多机型 profile，键盘 / 手柄操控
-- **ZQ SA01 人形** - [`examples/embodied/zq_sa01/README.md`](examples/embodied/zq_sa01/README.md)：Isaac Gym PPO 模型移植
-- **G1 人形** - [`examples/embodied/g1/README.md`](examples/embodied/g1/README.md)：ASAP 策略移植，自由行走 + 键盘控制 + Mimic 动作
-- **OrcaLocomotion** - [`examples/orca_locomotion/README.md`](examples/orca_locomotion/README.md)：PyPI 包回放 Go2 / G1 运动控制策略
-- **场景复制** - [`examples/embodied/replicator/README.md`](examples/embodied/replicator/README.md)：Actor 与 Light 批量生成
-- **流体仿真** - [`examples/embodied/fluid/README.md`](examples/embodied/fluid/README.md)：SPH 流体与 MuJoCo 刚体耦合
-- **布料仿真** - [`examples/embodied/cloth/README.md`](examples/embodied/cloth/README.md)：XPBD 布料与 MuJoCo 刚体耦合
-
-> **强化学习样例**：原有的 `ant_rl`、`franka_rl`、`legged_gym` 三个 RL 样例已从主分支移除，详见 [`examples/LEGACY_RL.md`](examples/LEGACY_RL.md)。这些样例仍可在 `release/26.7.1` 分支中获取，新的 Euler 兼容 RL 样例正在开发中。
-
-> **⚠️ 重要提示：资产准备**
-> 
-> 每个示例都需要相应的 3D 资产才能正常运行。**请务必查看各示例目录下的 README.md 文件**，了解：
-> - 📦 所需资产的下载地址
-> - 🔧 需要手动在 OrcaStudio/OrcaLab 中把对应 actor 拖动到布局
-> - 📝 对应的模型名称
-> 
-> 资产下载地址：https://simassets.orca3d.cn/
-
-## 📦 关于资产与扩展开发
-
-OrcaPlayground 依赖 **OrcaPlaygroundAssets** 资产库中的资源。若您需要接入新模型或进行其他扩展开发，请参阅 **OrcaLab** 及资产库的文档与资源。
-
-## 🔧 手动拖动资产（运行前必做）
-
-为了增添多场景物理交互，请在运行前先把对应模型手动拖动到布局中，再启动脚本。当前仓库中的机器人/角色主线示例都按“场景中已有 actor，脚本只做扫描和绑定”的思路组织。
-
-1. **打开资产面板**：在 OrcaStudio/OrcaLab 的资产窗口中搜索资产名称，例如Lite3,Remy，Hummer。
-2. **拖入布局**：将对应 actor 拖入布局或大纲，并调整到你希望的初始位置与朝向。
-3. **查看资产详情**：选中该资产后打开“资产详情”，确认路径与示例 README 中给出的路径一致。
-4. **再启动脚本**：脚本会扫描场景中的 joint / actuator / body 等后缀并自动绑定；如果拖错模型或匹配不完整，会直接报错退出。
-5. **路径不一致时的处理**：若你的资产包版本不同，请以 UI 里的“资产详情”实际路径为准，但 actor 类型必须与示例要求一致。
-6. **观察程序输出**：请点击左下角**终端按钮**查看启动日志、扫描结果和错误原因。
-
-各示例的具体拖入说明见对应 README：
-- 轮式底盘：[examples/embodied/wheeled_chassis/README.md](examples/embodied/wheeled_chassis/README.md#-手动拖入资产进行调试)
-- XBot：[examples/embodied/xbot/README.md](examples/embodied/xbot/README.md#-手动拖入资产进行调试)
-- 无人机：[examples/embodied/drone_driver/README.md](examples/embodied/drone_driver/README.md#-手动拖入资产进行调试)
-- ZQ SA01：[examples/embodied/zq_sa01/README.md](examples/embodied/zq_sa01/README.md#-手动拖入资产进行调试)
-- G1：[examples/embodied/g1/README.md](examples/embodied/g1/README.md#-手动拖入资产进行调试)
-
-## 📋 依赖说明
-
-### 基础依赖（必需）
-
-先按 [快速开始](#-快速开始) 安装 `orca-lab`（OrcaLab / OrcaGym 基础运行时），再安装本仓库基础依赖：
+复现README这条演示的摆放与录制参数（需要相同场景资产、药盒尺寸和框位置）：
 
 ```bash
-pip install -r requirements.txt
+python -u -m examples.euler.medication_sorting.main --mode run --execute --record \
+  --layout-mode baseline --seed 100 --xy-jitter 0.005 --yaw-jitter-deg 3 \
+  --task-index 0 --output "$HOME/med_runs/demo_$(date +%Y%m%d_%H%M%S)"
 ```
 
-`requirements.txt` 只保留大多数示例都会用到的最小运行时：
-- `pyyaml>=6.0` - 通用 YAML 配置解析
-- `pygame` - 键盘 / 手柄输入
-- `numba` - 数值计算加速
+此命令把四件药品设置到基准扰动位置；按你手动调整的布局采集时使用上面的默认采集命令。
 
-### 示例额外依赖（按需安装）
+## 结果、视频和数据
 
-安装基础依赖后，再根据你要运行的示例追加安装：
+```text
+g1_med_sort_v2/raw/train/episode_0000/
+├── result.json             执行成功与失败原因
+├── initial_layout.json     初始物体位姿与种子
+├── grasp_targets.json      实际计算的抓取目标
+├── placement_targets.json  框上方、释放位置与底部净空
+├── scene_report.json       场景绑定和物理参数
+├── scene.xml               本次物理模型
+├── plans.json              各阶段规划路径
+├── trace.json              实际执行诊断
+└── episode/
+    ├── metadata.json       任务、状态/动作协议、相机和完整性结果
+    ├── episode.npz         数值数据
+    └── videos/             三路视频与逐帧索引
+```
 
-简单示例 `character`、`wheeled_chassis`、`replicator`、`drone_driver` 安装根目录 `requirements.txt` 即可。`orca_locomotion` 需额外通过 PyPI 安装 `orca-locomotion` 包（详见其 README）。
+`result.json` 的 `success=true` 且 `episode/metadata.json` 的 `raw_valid=true` 才是成功候选。还需观看视频确认实际入框。失败时先看 `reason` 和最后一个阶段，不要绕过检查继续导出。
 
-如果你是以源码方式开发，也可以直接用 `extras_require`（`setup.py` 会自动发现各示例目录下的 `requirements.txt` 作为 extras）：
+把编号换成你实际采集成功的编号：
 
 ```bash
-# 基础可编辑安装
-pip install -e .
-
-# 安装单个样例的额外依赖
-pip install -e ".[g1]"           # G1 人形机器人
-pip install -e ".[xbot]"         # XBot 机器人
-pip install -e ".[zq_sa01]"      # ZQ-SA01 人形机器人
-pip install -e ".[d12]"          # D12 双臂机器人（scipy）
-pip install -e ".[fluid]"        # 流体仿真（orca-sph）
-
-# 一次安装所有样例依赖
-pip install -e ".[all]"
+EP="$HOME/datasets/g1_med_sort_v2/raw/train/episode_0000"
+python -m examples.euler.medication_sorting.preview \
+  --episode "$EP/episode" --output "$EP/preview.mp4"
 ```
 
-> **注意**：`xbot` 依赖 PyTorch，但 `requirements.txt` 中的 `torch` 已注释，需根据 NVIDIA 驱动版本手动安装对应的 CUDA 版本。请访问 [PyTorch 官网](https://pytorch.org/get-started/locally/) 选择安装命令，或查看各示例 `requirements.txt` 顶部的已验证配置。
+预览需要系统ffmpeg，默认1倍速。三路640×480画面按原尺寸横向拼接，加32像素标题栏后为1920×512；不裁剪、不缩放。三路训练原片仍各自保持640×480完整构图。
 
-### 运行要求
+| 数据 | 当前协议 |
+|---|---|
+| 状态 | 30维：左臂7＋左夹爪实测关节8＋右臂7＋右夹爪实测关节8 |
+| 动作 | 原生16维：左臂7＋左夹爪1＋右臂7＋右夹爪1 |
+| 夹爪 | 0～1的标定指令进度；0张开、1完整夹持，不是实测宽度 |
+| 视频 | 头部、左腕、右腕三路，当前640×480，不裁剪、不缩放 |
+| 时间 | 50Hz仿真时间，执行前状态与动作、相同索引画面对齐 |
+| 文本 | 自动保存英文任务，默认轮换三种同义表达 |
 
-1. **OrcaStudio/OrcaLab**：确保 OrcaStudio/OrcaLab 正在运行（默认地址：`localhost:50051`）
-2. **Python 版本**：Python >= 3.10（见 `setup.py` 的 `python_requires`）
-3. **场景配置**：运行前请先把对应 actor 手动拖入布局；详细说明见上方 [手动拖动资产（运行前必做）](#-手动拖动资产运行前必做)
+录制会等待三路画面对齐，因此实际墙钟录制时间可能更长。固定底盘、指尖 `condim=6`、全局 `impratio=2` 和现有闭链接触修正在每次运行时应用，无需逐个Layout修改XML或修改虚拟环境包。
 
-## 🔧 OrcaLab 配置
+## 导出LeRobot
 
-### 配置文件位置
-
-OrcaLab 配置文件位于 `.orcalab/config.toml`，OrcaLab 启动时会自动加载工作目录下的此配置文件。
-
-### 已配置的外部程序
-
-完整配置见 [.orcalab/config.toml](.orcalab/config.toml)，当前已配置的程序：
-
-- `run_sim_loop` - 空循环仿真
-- `character` - 角色仿真
-- `wheeled_chassis` - 轮式底盘仿真（差速驱动）
-- `anker_chassis` - 阿克曼转向底盘仿真
-- `xbot_orca` - XBot 仿真
-- `g1` - G1 人形仿真
-- `zq_sa01` - ZQ SA01 人形仿真
-- `run_actors` - Actor 场景复制
-- `run_lights` - 灯光场景复制
-- `fluid_sim` - 流体仿真
-
-### 添加新程序
-
-如需添加新的外部程序，编辑 `.orcalab/config.toml` 文件，在 `[[external_programs.programs]]` 部分添加新条目。
-
-#### 配置格式
-
-```toml
-[[external_programs.programs]]
-name = "your_program_name"           # ⚠️ 必填：程序唯一标识符
-display_name = "显示名称"             # ⚠️ 必填：在 OrcaLab UI 中显示的名称
-command = "python"                    # ⚠️ 必填：执行命令（通常是 "python"）
-args = ["-m", "examples.your_module.run_script"]  # ⚠️ 必填：命令行参数列表
-description = "程序描述"              # 可选：程序描述信息
-```
-
-#### 参数说明
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `name` | 字符串 | ✅ 是 | **程序唯一标识符**，用于 OrcaLab 内部查找和启动程序。必须与所有已配置程序的 `name` 和 `display_name` 都不重复。建议使用小写字母、数字和下划线，如 `my_program`。 |
-| `display_name` | 字符串 | ✅ 是 | **显示名称**，在 OrcaLab 启动对话框的 UI 中显示给用户。必须与所有已配置程序的 `name` 和 `display_name` 都不重复。可以使用中文、空格等字符，如 `我的程序`。 |
-| `command` | 字符串 | ✅ 是 | **执行命令**，通常是 `"python"`，也可以是其他可执行命令（如 `"python3"`、`"conda"` 等）。 |
-| `args` | 字符串数组 | ✅ 是 | **命令行参数列表**，每个参数作为数组的一个元素。例如：<br>- 模块方式：`["-m", "examples.module.run_script"]`<br>- 脚本方式：`["examples/script.py", "--arg1", "value1"]`<br>- 带参数：`["-m", "examples.module.run", "--config", "config.yaml", "--train"]` |
-| `description` | 字符串 | ❌ 否 | **程序描述**，用于在 OrcaLab UI 的工具提示中显示，帮助用户了解程序功能。 |
-
-#### ⚠️ 重要注意事项
-
-1. **`name` 和 `display_name` 禁止重复**
-   - ❌ **禁止**：两个程序的 `name` 相同
-   - ❌ **禁止**：两个程序的 `display_name` 相同
-   - ❌ **禁止**：一个程序的 `name` 与另一个程序的 `display_name` 相同
-   - ✅ **允许**：同一个程序内部，`name` 和 `display_name` 可以不同（通常建议不同，以便区分）
-
-2. **`name` 的唯一性要求**
-   - `name` 是程序在系统中的唯一标识符，OrcaLab 通过 `name` 来查找和启动程序
-   - 如果 `name` 重复，`get_external_program_config()` 只会返回第一个匹配的程序，导致后续程序无法正确启动
-   - 建议使用有意义的、描述性的名称，如 `legged_train`、`character_sim` 等
-
-3. **`display_name` 的唯一性要求**
-   - `display_name` 在 OrcaLab UI 中显示，如果重复会导致用户无法区分不同的程序
-   - 建议使用清晰、描述性的显示名称，如 `Legged Robot Training`、`Character Simulation` 等
-
-4. **工作目录**
-   - 程序启动时的工作目录是 OrcaLab 的工作目录（通常是 `.orcalab/config.toml` 所在的目录）
-   - 在 `args` 中使用相对路径时，请确保相对于工作目录的路径正确
-
-5. **模块导入路径**
-   - 使用 `-m` 参数以模块方式运行时，确保模块路径正确
-   - 例如：`["-m", "examples.embodied.character.run_character"]` 表示运行 `examples/embodied/character/run_character.py`
-
-#### 配置示例
-
-```toml
-# 示例 1：简单模块启动
-[[external_programs.programs]]
-name = "my_simple_program"
-display_name = "简单程序"
-command = "python"
-args = ["-m", "examples.my_module.run_script"]
-description = "这是一个简单的示例程序"
-
-# 示例 2：带命令行参数的程序
-[[external_programs.programs]]
-name = "fluid_sim"
-display_name = "Fluid Simulation"
-command = "python"
-args = [
-    "-m",
-    "examples.embodied.fluid.run_fluid_sim",
-    "--config", "examples/embodied/fluid/configs/default.yaml",
-    "--visualize"
-]
-description = "启动流体仿真"
-
-# 示例 3：使用脚本路径（非模块方式）
-[[external_programs.programs]]
-name = "custom_script"
-display_name = "自定义脚本"
-command = "python"
-args = ["examples/custom/script.py", "--option", "value"]
-description = "直接运行脚本文件"
-```
-
-#### 验证配置
-
-添加新程序后，建议：
-
-1. **检查重复**：确认新程序的 `name` 和 `display_name` 与所有已配置程序都不重复
-2. **测试启动**：在 OrcaLab 中尝试启动新程序，确认命令和参数正确
-3. **查看日志**：如果启动失败，查看 OrcaLab 的日志输出，检查命令、参数或模块路径是否正确
-
-### 初始化配置（可选）
-
-如果当前目录没有 `.orcalab/config.toml`，可以使用 OrcaLab 生成基本配置：
+先按 [转换环境安装说明](examples/euler/medication_sorting/MANUAL_WORKFLOW.md#5-安装独立转换环境) 准备 `med_lerobot`。采集环境与转换环境分开，转换不需要运行OrcaLab。
 
 ```bash
-orcalab --init-config
+conda activate med_lerobot
+python -u -m examples.euler.medication_sorting.lerobot_export \
+  --source-root "$HOME/datasets/g1_med_sort_v2" \
+  --output "$HOME/datasets/lerobot/local/g1_med_sort_v2" \
+  --repo-id local/g1_med_sort_v2 --split train
 ```
 
-然后手动添加本项目的外部程序配置。
+输出目录必须不存在；增加示范后重新导出请换新目录。转换只整理LeRobot v2.1文件、视频编码及元信息，不转换动作维度；旧18维原始记录会被拒绝。验证集单独使用 `--split val` 并指定不同输出目录。
 
-## 📖 更多信息
+## 当前验证与后续
 
-- OrcaGym 主仓库：https://github.com/openverse-orca/OrcaGym
-- 各示例详细说明：查看 `examples/*/README.md`
+当前在重构基础上修改了路径时间采样、阶段指令衔接、入框高度及松爪过程；原生16维动作、30维状态、摩擦参数和图像分辨率保持不变。当前已完成一条完整录制，其他布局仍需逐条验证。目前不能把结构测试通过理解为任意布局都能成功。
+
+新版平滑下放和渐进松爪已完成一条完整录制。接下来补充不同布局的成功数据，再做双臂ACT/π0.5训练适配和异步推理。当前双臂30维状态/16维动作不能直接套用此前单臂训练配置。
+
+原仓库使用说明保留在 [README.upstream.md](README.upstream.md)。
