@@ -2,6 +2,8 @@
 
 场景为 OrcaLab 26.9.1 的 `nursinghome / drag_classfication`。左臂将两只药瓶放进左侧紫框，右臂将两只药盒放进右侧蓝框，交替搬运，只要求入框，不要求直立。
 
+从采集数据到模型训练，请阅读[π0.5 LoRA 训练与推理说明](../../../docs/medication_pi05_training_inference.md)：包含当前完成情况、图像处理、双臂适配、开训条件和动作卡顿的验证方法，并附官方源码依据。
+
 ## 五个主文件
 
 ```text
