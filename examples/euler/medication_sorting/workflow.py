@@ -21,6 +21,7 @@ from orca_gym.protos.mjc_message_pb2_grpc import GrpcServiceStub
 from scipy.spatial.transform import Rotation
 
 from .execution import Executor, SortingEnv
+from .planning import IKError, PlanningError, plan_motion
 from .recording import SCALAR_GRIPPER_VERSION, TASK_TEXTS, RawEpisodeRecorder
 
 # --- Scene bindings and geometry ---
@@ -323,6 +324,25 @@ def placement_satisfied(scene, object_key, bin_key):
     return placement_inside(center, scene.m.geom_size[floor, :2], float(local_vertices[:, 2].min()))
 
 
+def release_over_bin(scene, key, bin_key):
+    """Check actual geometry before allowing a drop from the transfer hover.
+
+    The entire footprint must fit above the floor; the object bottom must be
+    above the rim and no more than 12 cm above it. Landing is checked separately.
+    """
+    floors = [g for g in scene.body_geoms(bin_key)
+              if int(scene.m.geom_type[g]) == 6 and scene.m.geom_size[g, 2] < 0.015]
+    floor = min(floors, key=lambda g: scene.m.geom_pos[g, 2])
+    rotation = scene.d.geom_xmat[floor].reshape(3, 3)
+    origin = scene.d.geom_xpos[floor]
+    item = (vertices(scene, key) - origin) @ rotation
+    rim = ((vertices(scene, bin_key) - origin) @ rotation)[:, 2].max()
+    bottom = item[:, 2].min()
+    return bool(np.isfinite(item).all()
+                and np.all(np.abs(item[:, :2]) <= scene.m.geom_size[floor, :2])
+                and rim <= bottom <= rim + 0.12)
+
+
 # --- Task configuration and target positions ---
 
 # Offsets use the current scene's world axes from the fixed pelvis position.
@@ -342,6 +362,7 @@ DROP_SLOTS = {
 # Side-grasped bottles need more wrist/rim clearance than top-grasped boxes.
 RELEASE_BOTTOM_CLEARANCE = {"calcium": 0.08, "melatonin": 0.08, "pharyngitis": 0.05, "herbbox": 0.05}
 HOVER_RIM_CLEARANCE = 0.06
+BOTTLE_CARRY_EXTRA_HEIGHT = 0.03
 DESTINATIONS = {"calcium": "left_bin", "melatonin": "left_bin", "pharyngitis": "right_bin", "herbbox": "right_bin"}
 
 
@@ -374,6 +395,8 @@ def placement_targets(scene, key, carried, hand_rotation):
     release_hand = release_object - np.asarray(hand_rotation) @ carried.local_position
     rim = ((vertices(scene, bin_key) - bin_p) @ bin_r)[:, 2].max()
     descent = max(0.06, rim + HOVER_RIM_CLEARANCE - (offset[2] + lo[2]))
+    if key in ("calcium", "melatonin"):
+        descent += BOTTLE_CARRY_EXTRA_HEIGHT
     return {
         "release": release_hand,
         "above": release_hand + bin_r[:, 2] * descent,
@@ -440,6 +463,46 @@ def grasp_target(scene, arm, key):
     return {"object_position": p, "position": grasp, "rotation": rotation, "approach": pre}
 
 
+def choose_next_object(scene, arm, keys, qpos, *, seed=0):
+    """Choose a nearby remaining object whose approach and descent both plan.
+
+    This probes the private planning scene only; it does not move the simulator
+    or certify the later lift and placement.
+    """
+    allowed = {key for assigned_arm, key in TASKS if assigned_arm == arm}
+    if not keys or len(set(keys)) != len(keys) or not set(keys) <= allowed:
+        raise ValueError(f"Invalid remaining objects for {arm}: {keys}")
+    qpos = np.asarray(qpos).copy()
+    report = {"arm": arm, "rejected": {}}
+    try:
+        scene.set_qpos(qpos)
+        hand, _ = scene.end_pose(arm)
+        distances = {key: float(np.linalg.norm(scene.body_pose(key)[0][:2] - hand[:2])) for key in keys}
+        ranked = sorted(keys, key=lambda key: (distances[key], key))
+        report.update(candidates=ranked, distance_xy_m=distances)
+        for key in ranked:
+            scene.set_qpos(qpos)
+            target = grasp_target(scene, arm, key)
+            try:
+                approach = plan_motion(
+                    scene, arm, target["approach"], target["rotation"], qpos, target=key, seed=seed
+                )
+                pre_q = qpos.copy()
+                pre_q[scene.arms[arm].qpos_ids] = approach[-1]
+                plan_motion(
+                    scene, arm, target["position"], target["rotation"], pre_q,
+                    target=key, allow=True, seed=seed,
+                )
+            except (IKError, PlanningError) as exc:
+                report["rejected"][key] = f"{type(exc).__name__}: {exc}"
+                continue
+            report["selected"] = key
+            return key, report
+        raise PlanningError(f"No feasible {arm} pickup: {report['rejected']}")
+    finally:
+        scene.set_qpos(qpos)
+
+
 # --- Task stages: approach, grasp, carry, release, return ---
 
 
@@ -448,6 +511,26 @@ class Trial(Executor):
         super().__init__(*args, **kwargs)
         self.grasp_targets = {}
         self.place_targets = {}
+        self.selections = []
+
+    def lower_for_release(self, arm, key, position, rotation, carried):
+        try:
+            self.move(arm, position, rotation, key + "_lower", target=key,
+                      carried=carried, allow=True, max_velocity=0.2, max_acceleration=0.4)
+            return True
+        except (IKError, PlanningError) as exc:
+            # These exceptions occur before move sends any commands. Do not
+            # catch execution failures such as lost grasp or tracking error.
+            self.sync()
+            if not release_over_bin(self.scene, key, DESTINATIONS[key]):
+                raise
+            path = self.out / "release_fallbacks.json"
+            events = json.loads(path.read_text()) if path.exists() else []
+            event = {"object": key, "mode": "release_from_hover", "reason": str(exc)}
+            events.append(event)
+            path.write_text(json.dumps(events, indent=2))
+            print("RELEASE_FROM_HOVER", json.dumps(event), flush=True)
+            return False
 
     def record_start(self):
         if self.record:
@@ -478,10 +561,19 @@ class Trial(Executor):
                         "max_joint_acceleration": 0.8,
                         "release_bottom_clearance_m": RELEASE_BOTTOM_CLEARANCE,
                         "release_ramp_seconds": 1.2,
+                        "release_fallback": "checked_hover_if_lowering_unplannable",
                     },
                     "source_scene_sha256": hashlib.sha256((self.out / "scene.xml").read_bytes()).hexdigest(),
                     "actuator_joint_names": self.env.joint_names,
                     "selected_objects": [k for _, k in TASKS if self.object_key in ("all", k)],
+                    "target_selection": "nearest_feasible_v1",
+                    "expert_trajectory": {
+                        "version": "bottle_carry_clearance_v2",
+                        "planner": "static_servo_headroom_v1",
+                        "bottle_lift_m": 0.12 + BOTTLE_CARRY_EXTRA_HEIGHT,
+                        "bottle_hover_extra_m": BOTTLE_CARRY_EXTRA_HEIGHT,
+                        "box_lift_m": 0.12,
+                    },
                     "initial_layout": json.loads((self.out / "initial_layout.json").read_text()),
                     "arms": {k: list(v.joint_names) for k, v in self.scene.arms.items()},
                 },
@@ -504,13 +596,33 @@ class Trial(Executor):
                 self.index += 1
                 time.sleep(0.08)
 
-    def pick_place(self, arm, key):
+    def prepare_pick(self, arm, prefix):
         self.sync()
         s, e = self.scene, self.env
         hand_p, hand_r = s.end_pose(arm)
-        self.move(arm, hand_p + [0, 0, 0.08], hand_r, key + "_clearance")
+        self.move(arm, hand_p + [0, 0, 0.08], hand_r, prefix + "_clearance")
         e.grippers.set(arm, 0)
-        self.hold(40, key + "_open_clearance")
+        self.hold(40, prefix + "_open_clearance")
+
+    def pick_available(self, arm, keys):
+        self.prepare_pick(arm, arm)
+        self.sync()
+        s, e = self.scene, self.env
+        binding = s.arms[arm]
+        q = e.data.qpos.ravel().copy()
+        ids = [e.joint_names.index(name) for name in binding.joint_names]
+        q[binding.qpos_ids] = e.command[ids]
+        key, report = choose_next_object(s, arm, keys, q, seed=self.index)
+        self.selections.append(report)
+        (self.out / "selection.json").write_text(json.dumps(self.selections, indent=2))
+        print("SELECT_TARGET", json.dumps(report), flush=True)
+        self.pick_place(arm, key, prepared=True)
+        return key
+
+    def pick_place(self, arm, key, *, prepared=False):
+        if not prepared:
+            self.prepare_pick(arm, key)
+        s, e = self.scene, self.env
         self.sync()
         target = grasp_target(s, arm, key)
         initial = target["object_position"].copy()
@@ -527,7 +639,8 @@ class Trial(Executor):
         self.hold(30, key + "_grip_hold")
         self.sync()
         carried = s.attach_object(arm, key, e.data.qpos.ravel().copy())
-        self.move(arm, grasp + [0, 0, 0.12], rotation, key + "_lift", target=key, carried=carried, allow=True)
+        lift_height = 0.12 + (BOTTLE_CARRY_EXTRA_HEIGHT if arm == "left" else 0)
+        self.move(arm, grasp + [0, 0, lift_height], rotation, key + "_lift", target=key, carried=carried, allow=True)
         self.sync()
         lifted = s.body_pose(key)[0]
         if lifted[2] - initial[2] < 0.07:
@@ -549,23 +662,14 @@ class Trial(Executor):
         self.place_targets[key] = {name: np.asarray(value).tolist() for name, value in placement.items()}
         (self.out / "placement_targets.json").write_text(json.dumps(self.place_targets, indent=2))
         print("PLACE_TARGET", key, json.dumps(self.place_targets[key]), flush=True)
-        self.move(
-            arm,
-            release_hand,
-            release_rotation,
-            key + "_lower",
-            target=key,
-            carried=carried,
-            allow=True,
-            max_velocity=0.2,
-            max_acceleration=0.4,
-        )
+        lowered = self.lower_for_release(arm, key, release_hand, release_rotation, carried)
         # Arrive and hold while still fully closed, then release over 1.2 seconds.
         self.hold(15, key + "_pre_release_hold")
         self.carried_guard = None
         self.ramp_gripper(arm, 0, 1.2, key + "_release")
         self.hold(25, key + "_release_settle")
-        self.move(arm, above, release_rotation, key + "_withdraw", max_velocity=0.2, max_acceleration=0.4)
+        if lowered:
+            self.move(arm, above, release_rotation, key + "_withdraw", max_velocity=0.2, max_acceleration=0.4)
         self.hold(50, key + "_placement_check")
         self.sync()
         if not placement_satisfied(s, key, bin_key):
@@ -630,6 +734,11 @@ def run_trial(args):
                 pos[:2] = pelvis[:2] + np.array(offset)
             quat = Rotation.from_matrix(rot).as_quat()[[3, 0, 1, 2]]
             base[key] = {"position": pos.tolist(), "quaternion": quat.tolist()}
+        reference_layout = getattr(args, "reference_layout", None)
+        if reference_layout is not None:
+            base = json.loads(reference_layout.read_text())["poses"]
+            if set(base) != set(BASELINE_XY):
+                raise ValueError("Reference layout must contain all four medication poses")
         sampled = sample_layout(base, args.seed, args.xy_jitter, args.yaw_jitter_deg)
         q = e.data.qpos.ravel().copy()
         for key, pose in sampled.items():
@@ -648,10 +757,13 @@ def run_trial(args):
         trial.align_initial_command()
         trial.home = e.command.copy()
         trial.record_start()
-        for arm, key in TASKS:
-            if args.object not in ["all", key]:
-                continue
-            trial.pick_place(arm, key)
+        pending = [(arm, key) for arm, key in TASKS if args.object in ("all", key)]
+        while pending:
+            for arm in ("left", "right"):
+                candidates = [key for assigned, key in pending if assigned == arm]
+                if candidates:
+                    key = trial.pick_available(arm, candidates)
+                    pending.remove((arm, key))
         trial.hold(50, "final_placement_check")
         trial.sync()
         for _, key in TASKS:
@@ -668,6 +780,8 @@ def run_trial(args):
         result["finished_at"] = datetime.now().isoformat()
         if trial:
             result["wall_seconds"] = time.monotonic() - trial.started
+            if not result["success"]:
+                result["failure_qpos"] = e.data.qpos.ravel().tolist()
             (args.output / "trace.json").write_text(json.dumps(trial.trace))
             np.save(args.output / "final_qpos.npy", e.data.qpos.ravel())
             if trial.rec:

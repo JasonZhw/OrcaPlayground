@@ -249,6 +249,27 @@ def time_samples(path, dt=0.02, max_velocity=0.5, max_acceleration=0.8):
     return np.concatenate(samples)
 
 
+def servo_bias_feasible(scene, arm):
+    """Check static feed-forward headroom at the scene's current configuration.
+
+    SortingEnv adds qfrc_bias / kp to each arm position command. A legal
+    joint angle can therefore require an illegal servo control. Reject that
+    configuration before execution instead of accepting a persistent pose error.
+    This is a static check, not a guarantee against dynamic/contact loads.
+    """
+    m, d = scene.m, scene.d
+    actuators = np.flatnonzero(m.actuator_trntype == mujoco.mjtTrn.mjTRN_JOINT)
+    joints = m.actuator_trnid[actuators, 0]
+    selected = np.isin(m.jnt_qposadr[joints], scene.arms[arm].qpos_ids)
+    actuators, joints = actuators[selected], joints[selected]
+    required = d.qpos[m.jnt_qposadr[joints]] + d.qfrc_bias[m.jnt_dofadr[joints]] / m.actuator_gainprm[actuators, 0]
+    limits = m.actuator_ctrlrange[actuators]
+    limited = m.actuator_ctrllimited[actuators].astype(bool)
+    return bool(np.isfinite(required).all() and np.all(
+        ~limited | ((required >= limits[:, 0]) & (required <= limits[:, 1]))
+    ))
+
+
 def plan_motion(scene, arm, position, rotation, qpos, *, target=None, carried=None, allow=False, seed=0):
     """Convert one world-space hand target into a collision-checked joint path."""
     binding = scene.arms[arm]
@@ -261,7 +282,7 @@ def plan_motion(scene, arm, position, rotation, qpos, *, target=None, carried=No
             allow_target_contact=allow,
             carried=carried,
             penetration_tolerance=0.001,
-        )
+        ) and servo_bias_feasible(scene, arm)
 
     goal = solve_ik(scene, arm, position, rotation, qpos, valid=valid_full, attempts=18, random_seed=seed)
 

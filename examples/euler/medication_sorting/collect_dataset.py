@@ -88,6 +88,102 @@ def valid_episode(output):
         return False
 
 
+def create_random_plan(root, reference, episodes, start_seed, xy_jitter, yaw_jitter):
+    """Freeze a successful layout and reserve fresh IDs, including failed runs."""
+    from .workflow import BASELINE_XY, sample_layout
+
+    if not valid_episode(reference):
+        raise ValueError("Reference must be a successful native16 episode with valid recordings")
+    if episodes < 1 or start_seed < 0:
+        raise ValueError("episodes must be positive and start-seed nonnegative")
+    poses = json.loads((reference / "initial_layout.json").read_text())["poses"]
+    if set(poses) != set(BASELINE_XY):
+        raise ValueError("Reference must contain all four medication poses")
+    sample_layout(poses, start_seed, xy_jitter, yaw_jitter)  # validate before reserving anything
+    root.mkdir(parents=True, exist_ok=True)
+    ensure_native_dataset(root)
+    numbers = [
+        int(p.name.split("_")[1]) for p in (root / "raw").glob("*/episode_*") if re.fullmatch(r"episode_\d+", p.name)
+    ]
+    for old in root.glob("auto_plan_*.json"):
+        if old.name.endswith(".status.json"):
+            continue
+        numbers.extend(int(row["episode_id"].split("_")[1]) for row in json.loads(old.read_text())["episodes"])
+    first = max(numbers, default=-1) + 1
+    if first + episodes > 10000:
+        raise ValueError("Episode IDs exceed the four-digit dataset contract")
+    name = f"auto_plan_{time.time_ns()}"
+    # Reference snapshots deliberately use a different suffix from plan files.
+    reference_path = root / f"auto_reference_{name.removeprefix('auto_plan_')}.json"
+    save_json(reference_path, {"poses": poses, "source_episode": str(reference.resolve())})
+    plan = {
+        "action_dim": 16,
+        "layout_mode": "current",
+        "reference_layout": reference_path.name,
+        "initial_xy_jitter_m": xy_jitter,
+        "initial_yaw_jitter_deg": yaw_jitter,
+        "continue_motion_failures": True,
+        "discard_failed_recordings": True,
+        "episodes": [
+            {"episode_id": f"episode_{i:04d}", "split": "train", "seed": start_seed + i - first, "task_index": i % 3}
+            for i in range(first, first + episodes)
+        ],
+    }
+    path = root / f"{name}.json"
+    save_json(path, plan)
+    return path
+
+
+def motion_failure(report):
+    """Only known motion failures are safe to count and reset automatically."""
+    recording = report.get("recording", {})
+    if report.get("recording_error") or recording.get("errors"):
+        return False
+    reason = report.get("reason", "")
+    return reason.startswith(("IKError:", "PlanningError:")) or (
+        reason.startswith("RuntimeError:")
+        and any(
+            message in reason
+            for message in (
+                "object did not follow the lift",
+                "object did not enter destination bin",
+                "final placement was disturbed",
+                "object slipped",
+                "lost grasp during",
+                "actual end pose missed target",
+            )
+        )
+    )
+
+
+def discard_failed_recording(output):
+    """Called only after a trial exits; retain diagnostics and the reserved ID."""
+    result = json.loads((output / "result.json").read_text())
+    metadata = json.loads((output / "episode/metadata.json").read_text())
+    if result.get("success") is not False or metadata.get("raw_valid") is not False:
+        raise ValueError("Refusing to delete an unconfirmed or successful recording")
+    receipt = output / "discarded_recording.json"
+    if receipt.exists():
+        return
+    before = tree_bytes(output)
+    for path in (output / "episode").iterdir():
+        if path.name != "metadata.json":
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+    for name in ("trace.json", "final_qpos.npy"):
+        (output / name).unlink(missing_ok=True)
+    save_json(
+        receipt,
+        {
+            "discarded_at": datetime.now(timezone.utc).isoformat(),
+            "reason": result.get("reason"),
+            "removed_bytes": before - tree_bytes(output),
+        },
+    )
+
+
 def run_episode(plan, row, output, root, maximum_bytes, reserve_bytes):
     command = [
         sys.executable,
@@ -113,6 +209,8 @@ def run_episode(plan, row, output, root, maximum_bytes, reserve_bytes):
         "--yaw-jitter-deg",
         str(plan["initial_yaw_jitter_deg"]),
     ]
+    if plan.get("reference_layout"):
+        command.extend(["--reference-layout", str(root / plan["reference_layout"])])
     logs = root / "logs"
     logs.mkdir(exist_ok=True)
     started = time.monotonic()
@@ -164,6 +262,9 @@ def collect(plan_path, maximum_bytes, reserve_bytes, estimate_bytes):
     status = {
         "status": "running",
         "completed": [],
+        "failed_attempts": [],
+        "plan": str(plan_path.resolve()),
+        "requested_attempts": len(rows),
         "active": None,
         "maximum_bytes": maximum_bytes,
         "reserve_bytes": reserve_bytes,
@@ -177,7 +278,7 @@ def collect(plan_path, maximum_bytes, reserve_bytes, estimate_bytes):
             for row in rows:
                 output = root / "raw" / row["split"] / row["episode_id"]
                 if output.exists():
-                    if not valid_episode(output):
+                    if not valid_episode(output) and not plan.get("continue_motion_failures"):
                         raise RuntimeError(f"Existing incomplete/failed episode requires review: {output}")
                 else:
                     used, free = tree_bytes(root), shutil.disk_usage(root).free
@@ -189,8 +290,20 @@ def collect(plan_path, maximum_bytes, reserve_bytes, estimate_bytes):
                     save_json(root / "collection_status.json", status)
                     print(f"COLLECT {row['episode_id']} split={row['split']} seed={row['seed']}", flush=True)
                     code = run_episode(plan, row, output, root, maximum_bytes, reserve_bytes)
-                    if code or not valid_episode(output):
-                        raise RuntimeError(f"Episode failed motion/recording validation: {output}; exit={code}")
+                    if code and valid_episode(output):
+                        raise RuntimeError(f"Episode has inconsistent success/exit status: {output}; exit={code}")
+                if not valid_episode(output):
+                    report_path = output / "result.json"
+                    report = json.loads(report_path.read_text()) if report_path.exists() else {}
+                    if not plan.get("continue_motion_failures") or not motion_failure(report):
+                        raise RuntimeError(f"Episode requires review (recording/infrastructure/incomplete): {output}")
+                    if plan.get("discard_failed_recordings") and (output / "episode/metadata.json").exists():
+                        discard_failed_recording(output)
+                    status["failed_attempts"].append({**row, "path": str(output), "reason": report["reason"]})
+                    status["active"] = None
+                    save_json(root / "collection_status.json", status)
+                    print(f"FAILED ATTEMPT {row['episode_id']}: {report['reason']}; resetting next layout", flush=True)
+                    continue
                 measured_bytes = tree_bytes(output)
                 estimate_bytes = max(estimate_bytes, int(measured_bytes * 1.25))
                 status["completed"].append({**row, "status": "complete", "path": str(output), "bytes": measured_bytes})
@@ -207,13 +320,21 @@ def collect(plan_path, maximum_bytes, reserve_bytes, estimate_bytes):
                 free_bytes=shutil.disk_usage(root).free,
             )
             save_json(root / "collection_status.json", status)
+            save_json(plan_path.with_suffix(".status.json"), status)
             print(json.dumps(status, ensure_ascii=False), flush=True)
     return status
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--plan", type=Path, help="Resume an existing plan; does not add attempts")
+    source.add_argument("--dataset-root", type=Path, help="Create and run a new randomized collection plan")
+    parser.add_argument("--reference-episode", type=Path, help="Successful raw episode used as the fixed center")
+    parser.add_argument("--episodes", type=int, default=15, help="Number of attempts, not guaranteed successes")
+    parser.add_argument("--start-seed", type=int, default=None)
+    parser.add_argument("--xy-jitter", type=float, default=0.003, help="Independent per-axis displacement in meters")
+    parser.add_argument("--yaw-jitter-deg", type=float, default=1.0)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--max-gb", type=float, default=25)
     parser.add_argument("--reserve-gb", type=float, default=4)
@@ -226,6 +347,18 @@ def main():
         parser.error("Capacity limits must be finite and positive")
     with HOST_WIDE_COLLECTION_LOCK.open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if args.dataset_root:
+            if args.reference_episode is None:
+                parser.error("New randomized collection requires --reference-episode")
+            args.plan = create_random_plan(
+                args.dataset_root.resolve(),
+                args.reference_episode.resolve(),
+                args.episodes,
+                int(time.time()) if args.start_seed is None else args.start_seed,
+                args.xy_jitter,
+                args.yaw_jitter_deg,
+            )
+            print(f"PLAN {args.plan}", flush=True)
         status = collect(args.plan, *(int(n * 1_000_000_000) for n in limits))
     if status["status"] == "failed":
         raise SystemExit(1)

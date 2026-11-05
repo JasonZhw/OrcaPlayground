@@ -189,6 +189,36 @@ def camera_contract(metadata):
     }
 
 
+def check_configuration(reference, metadata):
+    """Allow the recorded expert release policy only; keep robot contracts strict."""
+    controls = []
+    for item in (reference, metadata):
+        control = dict(item["control"])
+        if "release_fallback" in control:
+            if control.pop("release_fallback") != "checked_hover_if_lowering_unplannable":
+                raise ValueError("Unknown expert release_fallback policy")
+        controls.append(control)
+    if controls[0] != controls[1] or any(
+        metadata.get(key) != reference.get(key) for key in ("physics", "arms", "actuator_joint_names")
+    ):
+        raise ValueError("Mixed physics or robot control configuration")
+    if camera_contract(metadata) != camera_contract(reference):
+        raise ValueError("Mixed camera configuration")
+
+
+def expert_provenance(directory, metadata):
+    """Retain expert decisions without treating missing historical records as empty."""
+    report = {"control": metadata["control"]}
+    for key in ("target_selection", "expert_trajectory"):
+        report[key] = {"recorded": key in metadata, "value": metadata.get(key)}
+    for key in ("selection", "release_fallbacks"):
+        path = Path(directory).parent / f"{key}.json"
+        report[key] = {"recorded": path.is_file()}
+        if path.is_file():
+            report[key].update(value=json.loads(path.read_text()), sha256=sha256(path))
+    return report
+
+
 def export(source_root, output, repo_id="local/g1_med_sort_v2", split="train"):
     """Publish output only after conversion and reader validation both succeed."""
     source_root, output = Path(source_root).resolve(), Path(output).resolve()
@@ -205,10 +235,10 @@ def export(source_root, output, repo_id="local/g1_med_sort_v2", split="train"):
     first, _ = load_episode(entries[0])
     for directory in entries:
         metadata, _ = load_episode(directory)
-        if any(metadata.get(key) != first.get(key) for key in ("physics", "control", "arms", "actuator_joint_names")):
-            raise ValueError(f"Mixed physics or robot control configuration: {directory}")
-        if camera_contract(metadata) != camera_contract(first):
-            raise ValueError(f"Mixed camera configuration: {directory}")
+        try:
+            check_configuration(first, metadata)
+        except ValueError as error:
+            raise ValueError(f"{directory}: {error}") from error
 
     class H264Dataset(LeRobotDataset):
         def encode_episode_videos(self, episode_index):
@@ -216,8 +246,11 @@ def export(source_root, output, repo_id="local/g1_med_sort_v2", split="train"):
             for key in self.meta.video_keys:
                 destination = self.root / self.meta.get_video_file_path(episode_index, key)
                 image = self.root / DEFAULT_IMAGE_PATH.format(image_key=key, episode_index=episode_index, frame_index=0)
+                if destination.exists():
+                    raise FileExistsError(f"Refusing to overwrite an episode video: {destination}")
+                # v2.1 uses overwrite for parent-directory reuse too; episodes share it.
                 encode_video_frames(
-                    image.parent, destination, self.fps, vcodec="h264", pix_fmt="yuv420p", crf=18, g=2, overwrite=False
+                    image.parent, destination, self.fps, vcodec="h264", pix_fmt="yuv420p", crf=18, g=2, overwrite=True
                 )
                 paths[key] = str(destination)
             return paths
@@ -300,6 +333,7 @@ def export(source_root, output, repo_id="local/g1_med_sort_v2", split="train"):
                     print(f"  frames {i + 1}/{metadata['frame_count']}", flush=True)
             dataset.save_episode()
             write_json(origin / f"episode_{ep:06d}_metadata.json", metadata)
+            write_json(origin / f"episode_{ep:06d}_expert.json", expert_provenance(directory, metadata))
             np.savez_compressed(
                 origin / f"episode_{ep:06d}_timeline.npz",
                 **{key: arrays[key] for key in ("sim_time", "frame_index", "stage")},

@@ -262,6 +262,18 @@ class Executor:
         # measured qpos would turn tracking error into a sudden command jump.
         q[a.qpos_ids] = e.command[ids]
 
+        context = {
+            "stage": stage, "arm": arm, "seed": self.index, "qpos": q.tolist(),
+            "position": np.asarray(position).tolist(), "rotation": np.asarray(rotation).tolist(),
+            "target": target, "allow": allow,
+            "carried": None if carried is None else {
+                "arm": carried.arm, "body_id": int(carried.body_id),
+                "local_position": carried.local_position.tolist(),
+                "local_rotation": carried.local_rotation.tolist(),
+            },
+        }
+        # Retain the last query even when IK fails before a path is produced.
+        (self.out / "motion_context.json").write_text(json.dumps(context, indent=2))
         path = plan_motion(s, arm, position, rotation, q, target=target, carried=carried, allow=allow, seed=self.index)
         self.plans.append(
             {

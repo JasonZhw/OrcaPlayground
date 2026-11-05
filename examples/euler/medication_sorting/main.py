@@ -143,6 +143,7 @@ def main():
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--object", choices=("all", "calcium", "melatonin", "herbbox", "pharyngitis"), default="all")
     parser.add_argument("--layout-mode", choices=("current", "baseline"), default="current")
+    parser.add_argument("--reference-layout", type=Path, help="Frozen initial_layout JSON for randomized trials")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--xy-jitter", type=float, default=0)
     parser.add_argument("--yaw-jitter-deg", type=float, default=0)
@@ -153,6 +154,7 @@ def main():
         if (
             args.output
             or args.record
+            or args.reference_layout
             or args.object != "all"
             or args.layout_mode != "current"
             or args.seed
