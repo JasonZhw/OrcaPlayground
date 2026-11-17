@@ -20,9 +20,9 @@ def solve_ik(
     seed_qpos,
     *,
     valid=None,
-    attempts=10,
-    max_nfev=180,
-    position_tolerance=0.003,
+    attempts=40,
+    max_nfev=250,
+    position_tolerance=0.005,
     rotation_tolerance=0.035,
     random_seed=0,
     site=False,
@@ -55,12 +55,74 @@ def solve_ik(
     ):
         raise ValueError("IK budgets and tolerances must be positive")
     binding = scene.arms[arm]
-    m, d = scene.m, mujoco.MjData(scene.m)
-    d.qpos[:] = seed_qpos
-    rng = np.random.default_rng(random_seed)
-    seeds = [np.clip(seed_qpos[binding.qpos_ids], binding.lower, binding.upper)]
-    seeds.extend(rng.uniform(binding.lower, binding.upper, (attempts - 1, 7)))
+    m = scene.m
     check = valid if valid is not None else lambda q: scene.collision_free(q, arm)
+
+    # mink 微分 IK：雅可比 + 零空间 + 关节限位，比 scipy least_squares 更适合 7 自由度臂
+    # 单种子可能收敛到有碰撞的解（肘碰躯干/手指穿物体），所以也用多种子重启
+    import mink
+
+    target = mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(rotation), position)
+    frame_name = m.site(binding.end_site_id).name if site else m.body(binding.end_body_id).name
+    frame_type = "site" if site else "body"
+    arm_dofs = set(int(i) for i in binding.dof_ids)
+    non_arm = [i for i in range(m.nv) if i not in arm_dofs]
+
+    rng = np.random.default_rng(random_seed)
+    arm_seeds = [np.clip(seed_qpos[binding.qpos_ids], binding.lower, binding.upper)]
+    arm_seeds.extend(rng.uniform(binding.lower, binding.upper, (attempts - 1, 7)))
+
+    best_error = float("inf")
+    solutions = []
+    for arm_seed in arm_seeds:
+        q_init = seed_qpos.copy()
+        q_init[binding.qpos_ids] = arm_seed
+        configuration = mink.Configuration(m, q_init)
+        # 提高朝向权重：夹持物品搬运时，手腕/夹爪朝向尽量保持不转（否则看着很别扭），
+        # 位置仍受 position_tolerance 约束，不会为了朝向牺牲到够不着。
+        task = mink.FrameTask(frame_name, frame_type, position_cost=1.0, orientation_cost=5.0)
+        task.set_target(target)
+        tasks = [task]
+        if non_arm:
+            tasks.append(mink.DofFreezingTask(m, non_arm))
+        for _ in range(80):
+            try:
+                v = mink.solve_ik(configuration, tasks, dt=0.1, solver="daqp", damping=1e-6)
+                configuration.integrate_inplace(v, dt=0.1)
+            except mink.NoSolutionFound:
+                break
+        qpos = seed_qpos.copy()
+        qpos[binding.qpos_ids] = configuration.q[binding.qpos_ids]
+        d = mujoco.MjData(m)
+        d.qpos[:] = qpos
+        mujoco.mj_forward(m, d)
+        if site:
+            p = d.site_xpos[binding.end_site_id]
+            r = d.site_xmat[binding.end_site_id].reshape(3, 3)
+        else:
+            p = d.xpos[binding.end_body_id]
+            r = d.xmat[binding.end_body_id].reshape(3, 3)
+        position_error = float(np.linalg.norm(p - position))
+        rotation_error = float(np.linalg.norm(Rotation.from_matrix(rotation @ r.T).as_rotvec()))
+        best_error = min(best_error, position_error)
+        if position_error <= position_tolerance and rotation_error <= rotation_tolerance and check(qpos):
+            solutions.append(qpos)
+            # 收集几个可行解后，选【离当前位形最近】的那个：手臂动作最小、最省能量
+            if len(solutions) >= 6:
+                break
+    if solutions:
+        return min(
+            solutions,
+            key=lambda q: float(np.linalg.norm(q[binding.qpos_ids] - seed_qpos[binding.qpos_ids])),
+        )
+
+    # 回退：scipy 随机重启（慢，但通过碰撞后验能找到无碰撞解）
+    from scipy.optimize import least_squares
+
+    d = mujoco.MjData(m)
+    d.qpos[:] = seed_qpos
+    scipy_seeds = [np.clip(seed_qpos[binding.qpos_ids], binding.lower, binding.upper)]
+    scipy_seeds.extend(rng.uniform(binding.lower, binding.upper, (attempts - 1, 7)))
 
     def pose():
         if site:
@@ -73,20 +135,23 @@ def solve_ik(
         p, r = pose()
         return np.r_[p - position, 0.15 * Rotation.from_matrix(rotation @ r.T).as_rotvec()]
 
-    best_error = float("inf")
-    for seed in seeds:
-        result = least_squares(
-            residual, seed, bounds=(binding.lower, binding.upper), max_nfev=max_nfev, ftol=1e-10, xtol=1e-10, gtol=1e-10
-        )
+    for seed in scipy_seeds:
+        result = least_squares(residual, seed, bounds=(binding.lower, binding.upper),
+                               max_nfev=max_nfev, ftol=1e-10, xtol=1e-10, gtol=1e-10)
         error = residual(result.x)
-        position_error, rotation_error = np.linalg.norm(error[:3]), np.linalg.norm(error[3:]) / 0.15
+        position_error = float(np.linalg.norm(error[:3]))
+        rotation_error = float(np.linalg.norm(error[3:]) / 0.15)
         best_error = min(best_error, position_error)
         if position_error <= position_tolerance and rotation_error <= rotation_tolerance:
             qpos = seed_qpos.copy()
             qpos[binding.qpos_ids] = result.x
             if check(qpos):
                 return qpos
-    raise IKError(f"No valid {arm} IK solution in {attempts} attempts (best position error {best_error:.6f} m)")
+
+    raise IKError(
+        f"No valid {arm} IK solution in {attempts} attempts per solver "
+        f"(best position error {best_error:.6f} m)"
+    )
 
 
 class PlanningError(RuntimeError):
@@ -270,6 +335,37 @@ def servo_bias_feasible(scene, arm):
     ))
 
 
+def rebase_carried_for_planning(scene, arm, measured_qpos, commanded_qpos, carried):
+    """Preserve the held object's world pose at a continuous command-space start.
+
+    This is a per-move collision proxy only. Never replace the measured grasp
+    relation used for slip/placement checks, or modify physical object state.
+    """
+    from .workflow import CarriedObject
+
+    if carried.arm != arm:
+        raise ValueError("Carried object belongs to a different arm")
+    saved = scene.d.qpos.copy()
+    try:
+        scene.set_qpos(measured_qpos)
+        actual_p, actual_r = scene.end_pose(arm)
+        object_p, object_r = scene.body_pose(carried.body_id)
+        expected_p = actual_p + actual_r @ carried.local_position
+        expected_r = actual_r @ carried.local_rotation
+        if (np.linalg.norm(object_p - expected_p) > .01 or
+                np.linalg.norm(Rotation.from_matrix(object_r @ expected_r.T).as_rotvec()) > .10):
+            raise ValueError("Lost grasp: observed object moved relative to the measured attachment")
+        scene.set_qpos(commanded_qpos)
+        command_p, command_r = scene.end_pose(arm)
+        # 阈值放宽：实机/仿真跟踪误差常见 2~4°，原来的 2° 会把正常抬升判成失败
+        if (np.linalg.norm(command_p - actual_p) > .01 or
+                np.linalg.norm(Rotation.from_matrix(command_r @ actual_r.T).as_rotvec()) > .10):
+            raise ValueError("Carried planning tracking error exceeds 10 mm / 0.10 rad")
+        return CarriedObject(arm, carried.body_id, command_r.T @ (object_p - command_p), command_r.T @ object_r)
+    finally:
+        scene.set_qpos(saved)
+
+
 def plan_motion(scene, arm, position, rotation, qpos, *, target=None, carried=None, allow=False, seed=0):
     """Convert one world-space hand target into a collision-checked joint path."""
     binding = scene.arms[arm]
@@ -284,7 +380,7 @@ def plan_motion(scene, arm, position, rotation, qpos, *, target=None, carried=No
             penetration_tolerance=0.001,
         ) and servo_bias_feasible(scene, arm)
 
-    goal = solve_ik(scene, arm, position, rotation, qpos, valid=valid_full, attempts=18, random_seed=seed)
+    goal = solve_ik(scene, arm, position, rotation, qpos, valid=valid_full, attempts=150, random_seed=seed)
 
     def valid(part):
         full = qpos.copy()

@@ -1,0 +1,11 @@
+{
+  "mode": "baseline",
+  "seed": 0,
+  "source": "verified graspable layout (3/4 without raise, 4/4 with ready pose)",
+  "poses": {
+    "calcium":    {"position": [0.588, -3.520, 4.750], "quaternion": [1.0, 0.0, 0.0, 0.0]},
+    "melatonin":  {"position": [0.586, -3.631, 4.734], "quaternion": [1.0, 0.0, 0.0, 0.0]},
+    "pharyngitis":{"position": [0.376, -3.564, 4.750], "quaternion": [1.0, 0.0, 0.0, 0.0]},
+    "herbbox":    {"position": [0.464, -3.564, 4.750], "quaternion": [1.0, 0.0, 0.0, 0.0]}
+  }
+}

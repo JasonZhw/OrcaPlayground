@@ -225,3 +225,10 @@ MUJOCO_LOG.TXT
 #logs
 logs/*
 log/*
+
+# 任务运行输出（每轮仿真录像/日志，体积大）
+agent_out/
+
+# 临时备份文件
+*.bak
+*.bak_*

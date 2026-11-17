@@ -8,7 +8,7 @@ import numpy as np
 from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv
 from scipy.spatial.transform import Rotation
 
-from .planning import plan_motion, smooth_blend, time_samples
+from .planning import plan_motion, rebase_carried_for_planning, smooth_blend, time_samples
 from .recording import AD_KNOTS, CLOSURE_KNOTS
 
 
@@ -125,7 +125,7 @@ class SortingEnv(OrcaGymEulerEnv):
         for _ in range(self.frame_skip):
             # Feed-forward bias compensates the robot, not the gripper mechanisms.
             control = self.command.copy()
-            control[self.arm_mask] += 11.0 * (
+            control[self.arm_mask] += 12.0 * (
                 self.command[self.arm_mask] - self.data.qpos.ravel()[self.qids][self.arm_mask]
             )
             control[self.arm_mask] += self.data.qfrc_bias.ravel()[self.vids][self.arm_mask] / self.gains[self.arm_mask]
@@ -256,7 +256,8 @@ class Executor:
         self.sync()
         s, e = self.scene, self.env
         a = s.arms[arm]
-        q = e.data.qpos.ravel().copy()
+        measured_q = e.data.qpos.ravel().copy()
+        q = measured_q.copy()
         ids = [e.joint_names.index(n) for n in a.joint_names]
         # Preserve the last commanded position at phase boundaries. Starting at
         # measured qpos would turn tracking error into a sudden command jump.
@@ -264,6 +265,7 @@ class Executor:
 
         context = {
             "stage": stage, "arm": arm, "seed": self.index, "qpos": q.tolist(),
+            "measured_qpos": measured_q.tolist(),
             "position": np.asarray(position).tolist(), "rotation": np.asarray(rotation).tolist(),
             "target": target, "allow": allow,
             "carried": None if carried is None else {
@@ -274,7 +276,16 @@ class Executor:
         }
         # Retain the last query even when IK fails before a path is produced.
         (self.out / "motion_context.json").write_text(json.dumps(context, indent=2))
-        path = plan_motion(s, arm, position, rotation, q, target=target, carried=carried, allow=allow, seed=self.index)
+        planning_carried = carried
+        if carried is not None:
+            planning_carried = rebase_carried_for_planning(s, arm, measured_q, q, carried)
+            context["planning_carried"] = {
+                "arm": planning_carried.arm, "body_id": int(planning_carried.body_id),
+                "local_position": planning_carried.local_position.tolist(),
+                "local_rotation": planning_carried.local_rotation.tolist(),
+            }
+            (self.out / "motion_context.json").write_text(json.dumps(context, indent=2))
+        path = plan_motion(s, arm, position, rotation, q, target=target, carried=planning_carried, allow=allow, seed=self.index)
         self.plans.append(
             {
                 "stage": stage,
@@ -287,7 +298,9 @@ class Executor:
             }
         )
         (self.out / "plans.json").write_text(json.dumps(self.plans, indent=2))
-        print("MOVE", stage, arm, "waypoints", len(path), "goal", np.round(position, 4).tolist(), flush=True)
+        arm_cn = "左臂" if arm == "left" else "右臂"
+        goal = np.round(position, 4).tolist()
+        print(f"  [工具] move({stage}) → ({goal[0]:+.3f}, {goal[1]:+.3f}, {goal[2]:+.3f})", flush=True)
         for part in time_samples(path, dt=0.02, max_velocity=max_velocity, max_acceleration=max_acceleration):
             command = e.command.copy()
             command[ids] = part
@@ -297,6 +310,15 @@ class Executor:
         p, r = s.end_pose(arm)
         error = float(np.linalg.norm(p - position))
         angle = float(np.linalg.norm(Rotation.from_matrix(np.asarray(rotation) @ r.T).as_rotvec()))
-        print("REACHED", stage, "error", round(error, 4), "angle", round(angle, 3), flush=True)
-        if error > 0.012 or angle > 0.12:
+        # 高位置/末端伸展时伺服有重力残差，多保持一会儿让它收敛，再测一次
+        if error > 0.005 or angle > 0.12:
+            self.hold(60, stage + "_settle2")
+            self.sync()
+            p, r = s.end_pose(arm)
+            error = float(np.linalg.norm(p - position))
+            angle = float(np.linalg.norm(Rotation.from_matrix(np.asarray(rotation) @ r.T).as_rotvec()))
+        # 正常不刷屏；只有误差明显时才提示（阈值内直接静默）
+        if error > 0.005 or angle > 0.05:
+            print(f"        → 到位 误差 {error*1000:.1f}mm 角度 {angle*180/3.14159:.1f}°", flush=True)
+        if error > 0.015 or angle > 0.15:
             raise RuntimeError(f"{stage}: actual end pose missed target ({error:.4f} m, {angle:.3f} rad)")
