@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import time
 
-from examples.euler.medication_sorting.grasp_alignment import box_grasp_alignment
 from examples.euler.medication_sorting.skills import SkillResult, classify
 
 
@@ -58,19 +57,6 @@ class ArmTools:
         # 直接取最新帧，渲染刚刷新过，画面足够新。
         return self.grabber.grab(max_wait=8.0, required_simulate_index=None)
 
-    def render_now(self):
-        """立即把当前状态渲染到 OrcaLab GUI（不抓帧），让画面实时跟随微调。"""
-        try:
-            self.loop.run_until_complete(
-                self.bridge.render(
-                    self.env.data.qpos.ravel(),
-                    float(self.env.data.time),
-                    simulate_index=900000 + int(time.time() * 10) % 10000,
-                    request_idr=True,
-                )
-            )
-        except Exception:
-            pass
 
     def point(self, images, object_desc: str):
         """让模型看图报出物体中心像素 → 单应矩阵 → 世界坐标 (x, y)。
@@ -127,12 +113,6 @@ class ArmTools:
     # ------------------------------------------------------------------
     # 状态
     # ------------------------------------------------------------------
-    def where(self, arm: str) -> dict:
-        """当前手位置 + 关节角。agent 用这个了解机械臂状态。"""
-        self.trial.sync()
-        p, r = self.scene.end_pose(arm)
-        q = self.env.data.qpos.ravel()[self.scene.arms[arm].qpos_ids].copy()
-        return {"hand": [round(float(x), 4) for x in p], "joints": [round(float(x), 3) for x in q]}
 
     # ------------------------------------------------------------------
     # 运动
@@ -178,11 +158,6 @@ class ArmTools:
         except Exception as exc:  # noqa: BLE001
             return SkillResult(False, classify(exc), f"{type(exc).__name__}: {exc}")
 
-    def lift(self, arm, dz=0.12, stage="lift", carried=None) -> SkillResult:
-        """在当前手位置基础上抬升 dz 米（抓着东西时传 carried）。"""
-        self.trial.sync()
-        p, r = self.scene.end_pose(arm)
-        return self.move_to(arm, p[0], p[1], p[2] + dz, r, stage, carried=carried)
 
     def step_move_to(
         self,
@@ -346,37 +321,6 @@ class ArmTools:
             and s.m.geom_size[floor, 2] - 0.002 <= bottom <= rim + 0.12
         )
 
-    def judge_held(self, arm, object_desc, images):
-        """用大模型看「对应夹爪的腕部视图」判断物体是否被夹住并抬离桌面。
-
-        返回 (bool|None, raw)：True=夹住了，False=没夹住，None=模型没判断出来。
-        腕部视图离夹爪近，能看清物体在不在手指之间；同时附上俯视图作为整体参考。
-        """
-        import re
-
-        if not images or not hasattr(self.backend, "ask"):
-            return None, "无图/无模型"
-        wrist = images.get("camera_left" if arm == "left" else "camera_right")
-        head = images.get("head_cam")
-        views = [v for v in (wrist, head) if v is not None]
-        if not views:
-            return None, "无相机"
-        prompt = (
-            f"机器人刚对「{object_desc}」做了抓取+抬升动作。"
-            f"下面两张图：第一张是{arm}腕部摄像头（看夹爪手指之间），"
-            f"第二张是俯视图（看物体是否离开桌面）。"
-            f"综合这两个视图判断物体现在是否被夹爪夹住并抬离了桌面："
-            f"夹爪空着/物体还在桌面=held false；物体在夹爪手指之间、离开桌面=held true。"
-            '只输出 JSON：{"held": true} 或 {"held": false}'
-        )
-        try:
-            raw = self.backend.ask([_to_jpg(v) for v in views], prompt)
-        except Exception as exc:  # noqa: BLE001
-            return None, f"{type(exc).__name__}: {exc}"
-        m = re.search(r'"held"\s*:\s*(true|false)', raw, re.IGNORECASE)
-        if not m:
-            return None, raw[:60]
-        return m.group(1).lower() == "true", raw[:60]
 
     def grasp_staged(self, arm) -> SkillResult:
         """三段式闭合 + 握持：0.4→0.7→1.0，给物体时间被夹稳（对齐 pick_place）。"""
@@ -430,66 +374,7 @@ class ArmTools:
             return None, raw[:60]
         return m.group(1).lower() == "true", raw[:60]
 
-    def judge_alignment(self, arm, object_desc, images):
-        """腕部+俯视图综合判断物体在夹爪哪一侧，以及大致距离（用于自适应微调）。
 
-        返回 (side, dist_cm)：side ∈ {"aligned","left","right","forward","backward"}，
-        dist_cm 是模型估算的偏离距离（厘米），自适应微调步长。
-        """
-        import re
-
-        if not images or not hasattr(self.backend, "ask"):
-            return "unknown", 0.0
-        wrist = images.get("camera_left" if arm == "left" else "camera_right")
-        head = images.get("head_cam")
-        views = [v for v in (wrist, head) if v is not None]
-        if not views:
-            return "unknown", 0.0
-        prompt = (
-            f"下面两张图：第一张是{arm}腕部摄像头（近景，看夹爪手指），"
-            f"第二张是头部俯视图（能同时看到夹爪和「{object_desc}」）。"
-            f"请主要用俯视图，判断「{object_desc}」中心是否正好落在夹爪两根手指的中间："
-            f"只有物体中心与夹爪中心几乎重合才报 aligned；"
-            f"只要看得出有偏移，就报 side(left/right/forward/backward) 和 dist(偏离多少厘米)。"
-            f"宁可报偏移也不要轻易报 aligned。"
-            '输出 JSON：{"side":"left","dist":2.5}，side 取 aligned/left/right/forward/backward，dist 是偏离距(厘米)'
-        )
-        try:
-            raw = self.backend.ask([_to_jpg(v) for v in views], prompt)
-        except Exception:
-            return "unknown", 0.0
-        m = re.search(r'"side"\s*:\s*"(\w+)"', raw)
-        d = re.search(r'"dist"\s*:\s*(-?\d+\.?\d*)', raw)
-        side = m.group(1).lower() if m else "unknown"
-        dist = float(d.group(1)) if d else 0.0
-        return (side if side in ("aligned", "left", "right", "forward", "backward") else "unknown"), dist
-
-    def judge_grasp_ready(self, arm, object_desc, images):
-        """到了抓取点后，判断当前距离/姿态能不能直接抓取。
-
-        返回 (ready, reason)：ready=True 表示夹爪已到物体两侧、距离合适、能夹住。
-        """
-        import re
-
-        if not images or not hasattr(self.backend, "ask"):
-            return None, "无法判断"
-        wrist = images.get("camera_left" if arm == "left" else "camera_right")
-        head = images.get("head_cam")
-        views = [v for v in (wrist, head) if v is not None]
-        if not views:
-            return None, "无相机"
-        prompt = (
-            f"机器人已把夹爪移到「{object_desc}」的抓取点。下面两张图：第一张腕部摄像头，第二张俯视图。"
-            f"判断现在能否直接夹住它：夹爪两根手指是否正好在物体两侧、距离是否合适（不是太远够不到，也不是插进物体）？"
-            '输出 JSON：{"ready": true/false, "reason": "简短说明"}'
-        )
-        try:
-            raw = self.backend.ask([_to_jpg(v) for v in views], prompt)
-        except Exception:
-            return None, "模型无响应"
-        ready = re.search(r'"ready"\s*:\s*(true|false)', raw, re.IGNORECASE)
-        reason = re.search(r'"reason"\s*:\s*"([^"]*)"', raw)
-        return (ready.group(1).lower() == "true" if ready else None), (reason.group(1) if reason else raw[:50])
 
     def decide_grasp_action(self, arm, object_desc, images, hint=None, lesson=None):
         """到抓取点后，让大模型分析当前情况，统一给出下一步动作 + 自适应距离。
@@ -724,13 +609,22 @@ def parse_action(raw, allowed):
         return "unknown", "模型响应不完整或不合法", "", 0.0
 
 
+_TMP_DIR = None
+
+
 def _to_jpg(arr):
-    """ndarray → 临时 jpg 路径（模型后端需要文件路径）。"""
+    """ndarray → jpg 路径（模型后端需要文件路径）。
+
+    复用同一个临时目录 + 同一个文件名：每次调用覆盖写，避免每次观测都新建目录。
+    """
     import pathlib
     import tempfile
 
     from PIL import Image
 
-    p = pathlib.Path(tempfile.mkdtemp()) / "head.jpg"
+    global _TMP_DIR
+    if _TMP_DIR is None:
+        _TMP_DIR = pathlib.Path(tempfile.mkdtemp(prefix="med_agent_"))
+    p = _TMP_DIR / "view.jpg"
     Image.fromarray(arr).save(p, "JPEG", quality=85)
     return str(p)

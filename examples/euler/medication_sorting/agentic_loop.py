@@ -35,10 +35,6 @@
   agent_out/lessons.json 累积「失败码 → 成功恢复动作」。下次遇到同类失败时，
   把「历史上哪些动作救回来过」塞进 prompt。跑得越多经验越丰富。
 
-接着当前布局继续
-  启动时对每件物体做几何检查（placement_satisfied），已在目标筐内的直接跳过。
-  所以可以接着上一次没做完的场景继续，不必重置 OrcaLab。
-
 工程 trick（保留）
   - arm-only 模型：裁掉躯干/腿/头，且关闭它们的碰撞体（保留视觉），避免手臂撞躯干
   - 手指全链接触豁免：侧握时手指中段碰物体不算碰撞
@@ -97,6 +93,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
         from examples.euler.medication_sorting.workflow import (
             grasp_target, placement_satisfied, placement_targets,
         )
+        # placement_satisfied 既作默认 verify，也用作「是否已入筐」的几何判据
 
         grasp_builder = grasp_builder or grasp_target
         placement_builder = placement_builder or placement_targets
@@ -190,12 +187,6 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             report["object"] = key
             arm = "left" if key in ("calcium", "melatonin") else "right"
             bin_key = DESTINATIONS[key]
-            # 接着当前布局继续：这件已经在目标筐里就跳过，不用重置场景
-            tools.trial.sync()
-            if placement_satisfied(scene, key, bin_key):
-                print(f"\n  ⏭️  {OBJ_DESC[key]} 已在 {BIN_DESC[bin_key]} 内 → 跳过，接着处理下一件", flush=True)
-                placed[key] = True
-                continue
             print(
                 f"\n  🎯 {OBJ_DESC[key]} → {BIN_DESC[bin_key]}（{arm}臂{'侧握' if arm == 'left' else '顶握'}）",
                 flush=True,
@@ -552,7 +543,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
         return False
 
 
-def run_agentic_episode(args, policy) -> bool:
+def run_agentic_episode(args, backend) -> bool:
     """Create an isolated run directory and close resources on every exit path."""
     import asyncio
     import time
@@ -563,10 +554,10 @@ def run_agentic_episode(args, policy) -> bool:
     from orca_gym.protos.mjc_message_pb2_grpc import GrpcServiceStub
 
     from examples.euler.medication_sorting.agent_policy import OBJECT_KEYS, FrameGrabber
-    from examples.euler.medication_sorting.execution import SortingEnv
+    from examples.euler.medication_sorting.execution import Executor, SortingEnv
     from examples.euler.medication_sorting.fine_tools import ArmTools
     from examples.euler.medication_sorting.visual_grounding import load_homography
-    from examples.euler.medication_sorting.workflow import Scene, Trial, prepare_model
+    from examples.euler.medication_sorting.workflow import Scene, prepare_model
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:8]
     out = Path(args.output) / run_id
@@ -604,7 +595,7 @@ def run_agentic_episode(args, policy) -> bool:
         env.set_joint_qvel(np.zeros(env.model.nv))
         env.mj_forward()
         env.step(env.command)
-        trial = Trial(env, scene, bridge, loop, out, args.record, args.task_index, "all")
+        trial = Executor(env, scene, bridge, loop, out)
         trial.hold(75, "initial_settle")
         trial.align_initial_command()
         trial.home = env.command.copy()
@@ -615,11 +606,11 @@ def run_agentic_episode(args, policy) -> bool:
             cleanup.callback(grabber.close)
         path = Path("layouts/homography.json")
         grounder = load_homography(path) if path.exists() else None
-        tools = ArmTools(trial, scene, env, bridge, loop, grabber, grounder, policy.backend)
+        tools = ArmTools(trial, scene, env, bridge, loop, grabber, grounder, backend)
         # 相机暖机：刚开流时前几帧可能没就绪，先空拍几张让三路相机稳定，
         # 避免第一次 observe 取不到帧导致视觉定位直接失败。
         if grabber is not None:
             for _ in range(4):
                 tools.observe()
                 time.sleep(0.2)
-        return execute_tasks(tools, getattr(args, "objects", None) or OBJECT_KEYS, home_poses, out)
+        return execute_tasks(tools, OBJECT_KEYS, home_poses, out)

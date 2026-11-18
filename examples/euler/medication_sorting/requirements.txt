@@ -1,0 +1,14 @@
+# Agent-as-Policy 运行依赖（Python 3.12，conda 环境名 orcalab）
+#
+# 注意：orca-gym 由 OrcaLab 自带安装，不要用 pip 覆盖，否则会和本地应用版本冲突。
+#       若确实缺失，请按 OrcaLab 官方方式安装。
+#
+# mink 为逆运动学求解器，其余为 Mujoco / gRPC / 图像处理基础依赖。
+mujoco==3.12.0
+numpy==2.2.6
+scipy==1.16.2
+grpcio==1.66.1
+protobuf==5.29.6
+av==19.0.2
+Pillow==12.0.0
+mink==1.4.0

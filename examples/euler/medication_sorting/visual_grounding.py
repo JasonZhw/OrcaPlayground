@@ -87,7 +87,6 @@ def fit_homography_ransac(pixels, world_xy, *, n_iter=2000, inlier_thresh=0.03, 
     实测：普通最小二乘会被 1~2 个离群点毁掉（残差 12cm），
     RANSAC 剔除后中位误差降到 ~7.5mm。运行时模型噪声较大，必须用这个。
     """
-    import numpy as np
 
     pixels = np.asarray(pixels, dtype=np.float64)
     world_xy = np.asarray(world_xy, dtype=np.float64)
@@ -105,7 +104,6 @@ def fit_homography_ransac(pixels, world_xy, *, n_iter=2000, inlier_thresh=0.03, 
 
 
 def _point_errors(H, pixels, world_xy) -> np.ndarray:
-    import numpy as np
 
     errs = []
     for (u, v), (x, y) in zip(pixels, world_xy):

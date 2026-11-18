@@ -9,7 +9,11 @@ from orca_gym.environment.euler.orca_gym_euler_env import OrcaGymEulerEnv
 from scipy.spatial.transform import Rotation
 
 from .planning import plan_motion, rebase_carried_for_planning, smooth_blend, time_samples
-from .recording import AD_KNOTS, CLOSURE_KNOTS
+
+# 夹爪标定：归一化闭合量 → 每条手指两个执行器的目标值（原 recording.py，随采集代码移除后内联）
+SCALAR_GRIPPER_VERSION = "medication_closure_v1"
+CLOSURE_KNOTS = np.array([0.0, 0.4, 0.7, 1.0])
+AD_KNOTS = np.array([[0.0, -1.0], [0.0, 0.97], [0.28, 0.9], [0.28, 1.45]])
 
 
 def scalar_to_ad(closure):
@@ -141,17 +145,12 @@ class SortingEnv(OrcaGymEulerEnv):
 
 
 class Executor:
-    def __init__(self, env, scene, bridge, loop, out, record=False, task_index=0, object_key="all"):
+    def __init__(self, env, scene, bridge, loop, out):
         self.env, self.scene, self.bridge, self.loop, self.out = env, scene, bridge, loop, out
         self.index = 0
-        self.trace = []
         self.plans = []
-        self.rec = None
         self.home = env.command.copy()
         self.started = time.monotonic()
-        self.record = record
-        self.task_index = task_index
-        self.object_key = object_key
         self.carried_guard = None
 
     def sync(self):
@@ -162,40 +161,15 @@ class Executor:
         e, s = self.env, self.scene
         command = e.grippers.apply(command)
         q = e.data.qpos.ravel().copy()
-        state = []
-        action = []
-        for arm in ["left", "right"]:
-            a = s.arms[arm]
-            g = e.grippers.indices[arm]
-            state.extend(q[a.qpos_ids])
-            state.extend(q[e.qids[g]])
-            ids = [e.joint_names.index(n) for n in a.joint_names]
-            action.extend(command[ids])
-            action.append(e.grippers.closure[arm])
-        if self.rec or self.index % 2 == 0:
+        if self.index % 2 == 0:
             self.loop.run_until_complete(
                 asyncio.wait_for(
-                    self.bridge.render(
-                        q, float(e.data.time), simulate_index=self.index, request_idr=self.rec is not None
-                    ),
+                    self.bridge.render(q, float(e.data.time), simulate_index=self.index, request_idr=False),
                     15,
                 )
             )
-        if self.rec:
-            self.rec.append(state, action, float(e.data.time), self.index, stage)
         e.step(command)
         self.sync()
-        self.trace.append(
-            {
-                "index": self.index,
-                "time": float(e.data.time),
-                "stage": stage,
-                "state": state,
-                "action": action,
-                "qpos_after": e.data.qpos.ravel().tolist(),
-                "objects": {k: s.body_pose(v)[0].tolist() for k, v in s.bodies.items()},
-            }
-        )
         self.index += 1
         if self.carried_guard is not None:
             arm, key, local = self.carried_guard
@@ -204,10 +178,8 @@ class Executor:
             drift = float(np.linalg.norm(hr.T @ (op - hp) - local))
             if drift > 0.04:
                 raise RuntimeError(f"{key}: lost grasp during {stage} (relative drift {drift:.3f} m)")
-        if self.rec is None:
-            # Cap live trials at simulation speed. Never catch up in a burst
-            # after a slow render or planning pause; recording keeps exact indices.
-            time.sleep(max(0.0, 0.02 - (time.monotonic() - tick_started)))
+        # Cap at simulation speed; never catch up in a burst after a slow render.
+        time.sleep(max(0.0, 0.02 - (time.monotonic() - tick_started)))
 
     def hold(self, n, stage):
         for _ in range(n):
