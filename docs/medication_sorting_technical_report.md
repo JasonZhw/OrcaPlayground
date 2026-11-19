@@ -36,11 +36,11 @@ Unitree G1 双臂机器人在 OrcaLab 的 `nursinghome` 场景里做药品分拣
 
 | 指标 | 数值 | 来源 |
 |---|---|---|
-| 视觉标定残差 | ≈ 7.5 mm（RANSAC） | `visual_grounding.fit_homography_ransac` 注释 |
+| 视觉标定残差 | ≈ 7.5 mm（RANSAC） | `grounding.fit_homography_ransac` 注释 |
 | IK 位置/角度容差 | 5 mm / 2° | `planning.solve_ik` |
 | 到位判定容差 | 15 mm / 0.15 rad（含二次保持） | `execution.Executor.move` |
 | 结构化失败码 | 13 种（11 具体 + `ok` + `unknown`） | `skills.FAILURE_CODES` |
-| 模型动作空间 | 8 个词，无连续量 | `fine_tools.parse_action` 调用处 |
+| 模型动作空间 | 8 个词，无连续量 | `tools.parse_action` 调用处 |
 | 模型裁剪后 | qpos 121→99，执行器 45→30，碰撞体 273→242 | 本仓库 `prepared*.xml` 实测 |
 | 物理步进 | 0.473 → 0.171 ms（约 2.8×） | 同上，离线 `mj_step` 基准 |
 
@@ -57,8 +57,8 @@ Unitree G1 双臂机器人在 OrcaLab 的 `nursinghome` 场景里做药品分拣
 | 决策策略 | 视觉大模型（Anthropic Messages / OpenAI 兼容） | 可换供应商 |
 | 底层驱动 | OrcaLab 仿真、相机、夹爪指令 | 可换平台 |
 
-当前代码中，任务配置仍以模块常量形式写在 `agentic_loop.py` 与 `workflow.py` 内（见 6.2 待办），
-但几何计算不依赖物体名称，只使用包围盒与位姿。
+任务配置由 `tasks/*.yaml` 提供、`task.TaskSpec` 解析；`agent` 与 `tools`
+不含物体名常量，几何计算只使用包围盒与位姿。
 
 ### 2.2 决策闭环
 
@@ -91,7 +91,7 @@ Unitree G1 双臂机器人在 OrcaLab 的 `nursinghome` 场景里做药品分拣
 
 ### 3.2 抓取点如何计算
 
-全部由物体包围盒推导，不含产品先验（`workflow.grasp_target`）：
+全部由物体包围盒推导，不含产品先验（`geometry.grasp_target`）：
 
 ```text
 bounds      = 物体碰撞几何的世界顶点
@@ -109,7 +109,7 @@ approach    = grasp + [0, 0, 0.08]                       # 前臂避让余量
 
 ### 3.3 放置点与入筐判据
 
-放置点同样由几何推导（`workflow.placement_targets`）：
+放置点同样由几何推导（`geometry.placement_targets`）：
 
 ```text
 projected = 物体顶点 → (手旋转 · 抓持旋转)ᵀ → 筐坐标系
@@ -185,23 +185,68 @@ OrcaLab 导出的完整模型有 121 个 qpos、45 个执行器；分拣时机�
 
 ---
 
+### 3.7 任务定义与两种模式
+
+任务写在 YAML 里，由 `task.TaskSpec` 解析成对象。两种模式共用同一条抓取→搬运→入框管线：
+
+**固定清单模式**——逐件处理已知物体：
+
+```yaml
+objects:
+  - key: calcium
+    desc: 圆柱形药瓶（离机器人更近、靠前的那个）
+    dest: left_bin
+    arm: left
+bins:
+  left_bin: 左侧紫色筐
+```
+
+处理顺序由模型建议，但必须过两道校验才采纳：合法排列（不重不漏）、且同一条手臂上先近后远。
+第二条来自实测：让远处物体先抓时，近处物体仍挡在路径上，IK 只能找到碰撞解，
+报 `ik_no_solution ... best position error 0.000000`（位置可达但解被拒）。
+因此手臂内的顺序由几何兜底，模型只决定左右手的先后；不满足则回退 YAML 顺序。
+
+---
+
+### 3.8 视觉接地的精度上限
+
+单应矩阵把像素映射到桌面坐标，其精度决定「模型指的那个点」有多可信。实测结论：
+
+| 环节 | 实测 | 说明 |
+|---|---|---|
+| 模型报像素的重复性 | ±10 px | 同一帧问 5 次的标准差 |
+| 相机斜视时的深度信号 | 3~4 px/cm | 沿相机光轴方向移动 20 cm 仅变 70 px |
+| 标定残差（药品场景） | ≈ 7 mm | 视角较陡 + 高精度模型 |
+| 标定残差（斜视场景） | 20~30 mm | 多采样后仍受限于像素噪声 |
+
+因此像素只用于**判断是哪个物体**（物体间距通常 > 10 cm），不做毫米级定位；
+物体身份确定后，抓取点使用仿真里的真实位姿。
+
+> 实现上做过三项修正：提示词显式声明图像尺寸（否则模型按自己假设的分辨率报数）、
+> 取帧按 `simulate_index` 对齐（否则拿到上一步的旧帧）、DLT 前做 Hartley 归一化
+> （否则世界坐标 30 量级时矩阵病态）。
+
+---
+
 ## 4 实现
 
 ### 4.1 模块职责
 
 | 文件 | 职责 |
 |---|---|
-| `agent_policy.py` | 入口：模型后端、相机取帧、环境自检、`main()` |
-| `agentic_loop.py` | 主循环：逐物体抓取→搬运→入框，失败恢复与预算控制 |
-| `fine_tools.py` | 工具层：`observe / point / move_to / micro_adjust / grasp_preset / release / decide_*` 等 |
-| `skills.py` | `SkillResult`、失败码表、`classify()`（异常 → 失败码） |
+| `main.py` | 入口：模型后端、相机取帧、环境自检、`main()` |
+| `agent.py` | 主循环：逐物体抓取→搬运→入框，失败恢复与预算控制 |
+| `tools.py` | 工具层：`observe / point / move_to / micro_adjust / grasp_preset / release / decide_*` 等 |
+| `failures.py` | `SkillResult`、失败码表、`classify()`（异常 → 失败码） |
 | `lessons.py` | 经验库：失败码 → 恢复动作的频次统计 |
-| `workflow.py` | 场景绑定、抓取/放置几何、模型预处理（mesh 路径、指尖 condim、四连杆接触排除） |
+| `scene.py` | 场景绑定与模型预处理（mesh 路径、指尖 condim、四连杆接触排除） |
+| `geometry.py` | 抓取点 / 放置点几何、入筐判据 |
 | `planning.py` | IK、RRT-Connect、限速采样、伺服余量检查、抓持重投影 |
 | `execution.py` | 仿真推进、夹爪标定与指令、到位校验、运动执行 |
-| `visual_grounding.py` | 单应矩阵拟合/标定与像素↔桌面坐标换算 |
-| `arm_only_model.py` | 生成只含双臂的模型并封装 qpos 补齐 |
-| `mj_joint_strip.py` | 关节裁剪的 XML 层实现（删关节、烘焙位姿、关碰撞） |
+| `grounding.py` | 单应矩阵拟合/标定与像素↔桌面坐标换算（Hartley 归一化 + RANSAC） |
+| `task.py` | 任务定义：读 `tasks/*.yaml`（物体 / 筐 / 手臂） |
+| `model_trim.py` | 生成只含双臂的模型并封装 qpos 补齐 |
+| `xml_strip.py` | 关节裁剪的 XML 层实现（删关节、烘焙位姿、关碰撞） |
 
 ### 4.2 数据流
 
@@ -245,7 +290,8 @@ OrcaLab 导出的完整模型有 121 个 qpos、45 个执行器；分拣时机�
 | 端到端完成 4 件 | 一次完整运行 `status: complete`（223 条事件） |
 | 失败恢复生效 | 日志中可见「IK 无解 → 反馈 → 改判直接闭合」「搬运被挡 → 抬高/横移 → 通过」 |
 | 视觉标定可用 | 标定残差 ≈ 7.5 mm，`locate` 坐标与真值同量级 |
-| 后端可切换 | Anthropic Messages 与 OpenAI 兼容两套实现并存，改环境变量即切换 |
+| 后端可切换 | Anthropic / DeepSeek（Anthropic 兼容端点）/ OpenAI 兼容三选一，`--backend` 切换 |
+| 任务配置可外置 | `tasks/*.yaml` + `TaskSpec`，harness 不含物体名常量 |
 
 ### 5.2 待补（评测协议）
 
@@ -267,7 +313,8 @@ OrcaLab 导出的完整模型有 121 个 qpos、45 个执行器；分拣时机�
 1. **仅仿真验证**：真机的伺服误差、手眼标定误差均大于仿真，成功率会下降。
 2. **部分几何参数按物体写死**：抓取高度比例 `fraction`、筐内偏好落点 `DROP_SLOTS`
    目前按物体名配置；虽然抓取点由包围盒推导，但换物体仍需调这两个参数。
-3. **任务配置未外置**：物体列表、目标筐、手臂分配仍在源码常量里。
+3. **单应矩阵精度受限**：VLM 像素噪声 ±10 px，斜视时深度方向信号弱，
+   标定残差 20~30 mm；因此像素只够判断"是哪个物体"，不足以做毫米级定位。
 4. **单 agent**：所有上下文集中在一个提示词中，长任务下上下文体积会持续增长。
 5. **无学习**：经验库只是频次统计，不构成策略学习。
 
@@ -276,10 +323,10 @@ OrcaLab 导出的完整模型有 121 个 qpos、45 个执行器；分拣时机�
 | 优先级 | 事项 | 产出 |
 |---|---|---|
 | P0 | 固定布局跑 5~10 次，统计成功率与失败分布 | 评测表（补进第 5 节） |
-| P0 | 换 DeepSeek 后端跑同一任务 | 证明「换模型只改配置」，附录像 |
-| P1 | 任务配置外置为 `TaskSpec`（YAML） | harness 不再含物体常量 |
-| P1 | 抓取高度与落点自动化（由长宽比、筐内空位推导） | 去掉 `fraction` / `DROP_SLOTS` |
+| P1 | 换 DeepSeek 后端在同一场景跑通并录像 | 已完成后端接入，待补跑分 |
 | P2 | 真机复现 | 手眼标定 + 伺服残差补偿 |
+
+已完成：任务配置外置（`tasks/*.yaml`）、模型自定处理顺序、多后端切换、场景标定工具。
 
 ---
 

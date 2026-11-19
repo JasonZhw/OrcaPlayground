@@ -12,3 +12,4 @@ protobuf==5.29.6
 av==19.0.2
 Pillow==12.0.0
 mink==1.4.0
+PyYAML==6.0.3

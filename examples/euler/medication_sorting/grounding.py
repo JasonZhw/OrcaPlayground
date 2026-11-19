@@ -51,32 +51,36 @@ def fit_homography(pixels, world_xy) -> np.ndarray:
     assert pixels.shape == world_xy.shape and pixels.shape[1] == 2
     assert len(pixels) >= 4, "单应至少需要 4 个非共线点"
 
-    n = len(pixels)
+    # Hartley 归一化：世界坐标动辄 30 量级，不归一化会把 DLT 解成垃圾。
+    def _normalize(pts):
+        c = pts.mean(axis=0)
+        d = float(np.sqrt(((pts - c) ** 2).sum(axis=1)).mean())
+        sc = np.sqrt(2.0) / d if d > 1e-12 else 1.0
+        T = np.array([[sc, 0.0, -sc * c[0]], [0.0, sc, -sc * c[1]], [0.0, 0.0, 1.0]])
+        return (pts - c) * sc, T
+
+    pn, Tp = _normalize(pixels)
+    wn, Tw = _normalize(world_xy)
+    n = len(pn)
     A = np.zeros((2 * n, 8))
     b = np.zeros(2 * n)
-    for i, ((u, v), (x, y)) in enumerate(zip(pixels, world_xy)):
+    for i, ((u, v), (x, y)) in enumerate(zip(pn, wn, strict=False)):
         A[2 * i] = [u, v, 1, 0, 0, 0, -u * x, -v * x]
         A[2 * i + 1] = [0, 0, 0, u, v, 1, -u * y, -v * y]
         b[2 * i] = x
         b[2 * i + 1] = y
     h, *_ = np.linalg.lstsq(A, b, rcond=None)
-    H = np.eye(3)
-    H[0] = [h[0], h[1], h[2]]
-    H[1] = [h[3], h[4], h[5]]
-    H[2] = [h[6], h[7], 1.0]
-    return H
+    Hn = np.eye(3)
+    Hn[0] = [h[0], h[1], h[2]]
+    Hn[1] = [h[3], h[4], h[5]]
+    Hn[2] = [h[6], h[7], 1.0]
+    H = np.linalg.inv(Tw) @ Hn @ Tp
+    return H / H[2, 2]
 
 
 def pixel_to_world(H, u, v) -> tuple[float, float]:
     """像素 → 桌面坐标。"""
     q = H @ np.array([u, v, 1.0])
-    q = q / q[2]
-    return float(q[0]), float(q[1])
-
-
-def world_to_pixel(H, x, y) -> tuple[float, float]:
-    """桌面坐标 → 像素（用于校验标定残差）。"""
-    q = np.linalg.inv(H) @ np.array([x, y, 1.0])
     q = q / q[2]
     return float(q[0]), float(q[1])
 
@@ -106,7 +110,7 @@ def fit_homography_ransac(pixels, world_xy, *, n_iter=2000, inlier_thresh=0.03, 
 def _point_errors(H, pixels, world_xy) -> np.ndarray:
 
     errs = []
-    for (u, v), (x, y) in zip(pixels, world_xy):
+    for (u, v), (x, y) in zip(pixels, world_xy, strict=False):
         wx, wy = pixel_to_world(H, u, v)
         errs.append(np.hypot(wx - x, wy - y))
     return np.asarray(errs)
@@ -115,7 +119,7 @@ def _point_errors(H, pixels, world_xy) -> np.ndarray:
 def residual(H, pixels, world_xy) -> float:
     """标定残差：把所有像素反算回世界，与真值的平均欧氏距离（米）。"""
     errs = []
-    for (u, v), (x, y) in zip(pixels, world_xy):
+    for (u, v), (x, y) in zip(pixels, world_xy, strict=False):
         wx, wy = pixel_to_world(H, u, v)
         errs.append(np.hypot(wx - x, wy - y))
     return float(np.mean(errs))
@@ -136,59 +140,93 @@ def load_homography(path) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def calibrate(bridge, scene, env, arm, backend, object_key="calcium",
-              x_range=(0.40, 0.68), y_range=(-3.60, -3.46),
-              nx=4, ny=4, table_z=4.752, out_path="layouts/homography.json",
-              loop=None) -> dict:
-    """把参考物体移到桌面网格点，让模型报像素，拟合单应矩阵。
+def calibrate(bridge, scene, env, arm, backend, object_key, ref_desc,
+              x_range, y_range, nx=4, ny=4, table_z=None,
+              out_path="layouts/homography.json", loop=None, samples=5) -> dict:
+    """把参考物体沿桌面网格移动，让模型报像素，用 RANSAC 拟合单应矩阵。
 
-    返回 {"H": 矩阵, "residual": 米, "points": 每点的像素/世界/误差}。
-
-    注意：依赖仿真在线，且需要后端能「看图报物体中心像素」。
+    每个场景的相机位置不同，所以每个场景要标定一次；结果写到独立文件。
+    ref_desc 是给模型看图的物体描述（如「黄色收纳筐」），必须能可靠指认。
     """
+    from .main import FrameGrabber
+    from .tools import _to_jpg
+
     xs = np.linspace(x_range[0], x_range[1], nx)
     ys = np.linspace(y_range[0], y_range[1], ny)
-    pixels, world = [], []
-    records = []
-
-    for y in ys:
-        for x in xs:
-            # 1) 把参考物体移到 (x, y)
+    if table_z is None:
+        table_z = float(scene.body_pose(object_key)[0][2])
+    pixels, world, records = [], [], []
+    q0 = env.data.qpos.ravel().copy()  # 标定前位形，结束归位
+    grabber = FrameGrabber(bridge=bridge, loop=loop)
+    try:
+        for i, (y, x) in enumerate([(y, x) for y in ys for x in xs]):
             addr = scene.free_joint_address(object_key)
             q = env.data.qpos.ravel().copy()
             q[addr:addr + 3] = [x, y, table_z]
             env.set_joint_qpos(q)
             env.mj_forward()
-            # 2) 渲染 + 抓图
-            from .agent_policy import FrameGrabber  # noqa: F401 延迟导入避免环
-
-            grabber = FrameGrabber(bridge=bridge, loop=loop)
+            frame_index = int(3000000 + i)
             if loop is not None:
                 loop.run_until_complete(bridge.render(
                     env.data.qpos.ravel(), float(env.data.time),
-                    simulate_index=int(2000000 + len(pixels)), request_idr=True))
-            frames = grabber.grab(max_wait=8.0)
+                    simulate_index=frame_index, request_idr=True))
+            # 只接受「这一步渲染出来的那一帧」；否则拿到上一步的旧帧，
+            # 像素和世界坐标就错位，标定残差会飙到几十厘米。
+            frames = grabber.grab(max_wait=8.0, required_simulate_index=frame_index)
             img = frames.get("head_cam")
             if img is None:
                 continue
-            # 3) 让模型报像素（业务方实现 detector）
-            detector = backend.ask
-            prompt = ("这是桌面俯视图。找出白色药瓶（calcium）的中心，"
-                      "只输出 JSON：{\"u\":整数,\"v\":整数}")
-            raw = detector([img], prompt) if callable(getattr(backend, "ask", None)) else ""
-            u, v = _parse_pixel(raw)
-            if u is None:
+            h, w = img.shape[:2]
+            prompt = (f"这是桌面俯视图（{w}x{h}）。找出「{ref_desc}」的中心。"
+                      f"只能用 0~{w-1} 的 u 和 0~{h-1} 的 v。"
+                      '只输出 JSON：{"u":整数,"v":整数}')
+            # 模型像素有 ±10px 噪声，同一帧多问几次取中位数。
+            us, vs = [], []
+            jpg = _to_jpg(img)
+            for _ in range(max(1, samples)):
+                try:
+                    raw = backend.ask([jpg], prompt)
+                except Exception:  # noqa: BLE001
+                    continue
+                u, v = _parse_pixel(raw)
+                if u is not None and 0 <= u < w and 0 <= v < h:
+                    us.append(u)
+                    vs.append(v)
+            if not us:
+                print(f"  [标定] ({x:+.3f},{y:+.3f}) 像素无效，跳过", flush=True)
                 continue
+            u = int(round(float(np.median(us))))
+            v = int(round(float(np.median(vs))))
             pixels.append((u, v))
             world.append((x, y))
-            records.append({"x": x, "y": y, "u": u, "v": v, "raw": raw})
+            records.append({"x": float(x), "y": float(y), "u": u, "v": v})
+            spread = f"±{float(np.std(us)):.0f}/{float(np.std(vs)):.0f}px"
+            print(f"  [标定] ({x:+.3f},{y:+.3f}) ← 像素 ({u},{v})  {spread}  n={len(us)}", flush=True)
+    finally:
+        grabber.close()
+        # 把参考物放回原位，不留下被挪动的场景
+        try:
+            env.set_joint_qpos(q0)
+            env.mj_forward()
+            if loop is not None:
+                loop.run_until_complete(bridge.render(
+                    env.data.qpos.ravel(), float(env.data.time),
+                    simulate_index=3999999, request_idr=True))
+            print("  [标定] 参考物已归位", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
 
     if len(pixels) < 4:
-        raise RuntimeError(f"有效标定点不足（{len(pixels)}/4），检查抓图和模型像素输出")
-
-    H = fit_homography(np.array(pixels), np.array(world))
-    res = residual(H, np.array(pixels), np.array(world))
-    save_homography(H, out_path, meta={"object": object_key, "residual_m": res})
+        raise RuntimeError(f"有效标定点不足（{len(pixels)}/4），检查抓图与模型像素输出")
+    pix = np.array(pixels, dtype=float)
+    wor = np.array(world, dtype=float)
+    # 模型像素会有离群点，普通最小二乘会被带偏；用 RANSAC 剔掉再拟合。
+    H, errs = fit_homography_ransac(pix, wor, inlier_thresh=0.05)
+    inl = errs < 0.05
+    res = float(errs[inl].mean()) if inl.any() else float(errs.mean())
+    print(f"  [标定] 内点 {int(inl.sum())}/{len(errs)}，内点平均误差 {res * 1000:.1f} mm", flush=True)
+    save_homography(H, out_path, meta={"object": object_key, "residual_m": res,
+                                       "inliers": int(inl.sum()), "points": len(errs)})
     return {"H": H, "residual": res, "points": records}
 
 
@@ -208,15 +246,3 @@ def _parse_pixel(raw: str):
 # ---------------------------------------------------------------------------
 # 运行时接地
 # ---------------------------------------------------------------------------
-
-
-class VisualGrounding:
-    """运行时：模型给像素 → 桌面坐标。"""
-
-    def __init__(self, H: np.ndarray, table_z: float = 4.752):
-        self.H = H
-        self.table_z = table_z
-
-    def ground(self, u, v) -> tuple[float, float, float]:
-        x, y = pixel_to_world(self.H, u, v)
-        return x, y, self.table_z

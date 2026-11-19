@@ -1,0 +1,24 @@
+# 药品分拣任务定义。harness 只读这份配置，不硬编码物体。
+name: 药品分拣
+
+bins:
+  left_bin: 左侧紫色筐
+  right_bin: 右侧蓝色筐
+
+objects:
+  - key: calcium
+    desc: 圆柱形药瓶（离机器人更近、靠前的那个）
+    dest: left_bin
+    arm: left
+  - key: melatonin
+    desc: 圆柱形药瓶（离机器人更远、靠后的那个）
+    dest: left_bin
+    arm: left
+  - key: herbbox
+    desc: 宽扁的长方形药盒（宽而短）
+    dest: right_bin
+    arm: right
+  - key: pharyngitis
+    desc: 细长的长方形药盒（窄长条）
+    dest: right_bin
+    arm: right

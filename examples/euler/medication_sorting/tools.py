@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 
-from examples.euler.medication_sorting.skills import SkillResult, classify
+from examples.euler.medication_sorting.failures import SkillResult, classify
 
 
 class ArmTools:
@@ -40,7 +40,7 @@ class ArmTools:
         if self.grabber is None:
             return {}
         self.observation_index += 1
-        for i in range(2):
+        for _i in range(2):
             try:
                 self.loop.run_until_complete(
                     self.bridge.render(
@@ -70,15 +70,17 @@ class ArmTools:
 
         if self.grounder is None or not images or not hasattr(self.backend, "ask"):
             return None
-        from examples.euler.medication_sorting.visual_grounding import pixel_to_world
+        from examples.euler.medication_sorting.grounding import pixel_to_world
 
         head = images.get("head_cam")
         if head is None:
             return None
         # 单点：报物体中心（比包围盒更稳）；误差主要来自物体混淆，靠描述区分
+        ph, pw = head.shape[:2]
         prompt = (
-            f"这是机器人头部相机俯视桌面（640x480）。"
+            f"这是机器人头部相机俯视桌面（{pw}x{ph}）。"
             f"找出「{object_desc}」的中心。"
+            f"只能用 0~{pw-1} 的 u 和 0~{ph-1} 的 v。"
             '只输出一行 JSON，不要代码块：{"u":整数,"v":整数}'
         )
         try:
@@ -302,7 +304,7 @@ class ArmTools:
         """
         import numpy as np
 
-        from examples.euler.medication_sorting.workflow import vertices
+        from examples.euler.medication_sorting.scene import vertices
 
         self.trial.sync()
         s = self.scene
@@ -557,35 +559,57 @@ class ArmTools:
         dy = max(-0.06, min(0.06, num("dy_cm") / 100.0))
         return ready, dx, dy, str(obj.get("seen", "") or "")
 
-    def survey_scene(self, images):
-        """开局：让大模型观察场景，用自然语言说出看到了什么、打算怎么做。
+    def survey_scene(self, images, goal=None, keys=None):
+        """开局：让大模型观察场景，说出看到什么、打算怎么做、按什么顺序处理。
 
-        返回 (seen, plan)：两段自然语言描述。
+        goal：任务目标（自然语言）；keys：候选物体 key，用来让模型给出处理顺序。
+        返回 (seen, plan, order)：order 是模型建议的顺序（可能是 None 或非法排列）。
+        顺序只作建议：调用方必须校验它是 keys 的合法排列，否则回退原顺序。
         """
+        import json
         import re
 
         if not images or not hasattr(self.backend, "ask"):
-            return "无法观察场景", "按固定顺序处理"
+            return "无法观察场景", "按固定顺序处理", None
         head = images.get("head_cam")
         if head is None:
-            return "无法观察场景", "按固定顺序处理"
+            return "无法观察场景", "按固定顺序处理", None
+        task_line = f"任务目标：{goal}。\n" if goal else ""
+        order_line = ""
+        if keys:
+            order_line = (
+                f"③ 按什么顺序处理最省事。候选物体固定为这些 key：{list(keys)}，"
+                "每个都要处理一次、不重复不遗漏。\n"
+            )
         prompt = (
-            "这是机器人工作台的头部俯视图。左边有紫色筐，右边有蓝色筐。"
-            "任务（按形状认物体，不用管颜色）："
-            "桌面上**两个圆柱形药瓶**都放进左边紫色筐；"
-            "**两个长方形药盒**（一个细长、一个宽扁）都放进右边蓝色筐。"
-            "四个物体都是任务，都要处理。\n"
-            "请用简洁自然的中文说出：① 你看到了哪些物体（形状 + 大致方位）；"
-            "② 你打算先抓哪个、放哪个筐。"
-            '输出 JSON：{"seen":"...","plan":"..."}'
+            "这是机器人工作台的头部俯视图。"
+            f"{task_line}"
+            "请只根据画面里真正看到的东西，用简洁自然的中文说出："
+            "① 桌面上有哪些物体（形状 + 大致方位）；"
+            "② 你打算先做什么。"
+            f"{order_line}"
+            '输出 JSON：{"seen":"...","plan":"...","order":["key1","key2"]}'
         )
         try:
             raw = self.backend.ask([_to_jpg(head)], prompt)
         except Exception:
-            return "无法观察场景", "按固定顺序处理"
+            return "无法观察场景", "按固定顺序处理", None
         seen = re.search(r'"seen"\s*:\s*"([^"]*)"', raw)
         plan = re.search(r'"plan"\s*:\s*"([^"]*)"', raw)
-        return (seen.group(1) if seen else "（模型未描述）"), (plan.group(1) if plan else "按固定顺序处理")
+        order = None
+        m = re.search(r'"order"\s*:\s*\[([^\]]*)\]', raw)
+        if m:
+            try:
+                parsed = json.loads("[" + m.group(1) + "]")
+                if all(isinstance(item, str) for item in parsed):
+                    order = parsed
+            except (TypeError, ValueError):
+                order = None
+        return (
+            seen.group(1) if seen else "（模型未描述）",
+            plan.group(1) if plan else "按固定顺序处理",
+            order,
+        )
 
 
 def parse_action(raw, allowed):

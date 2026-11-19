@@ -13,7 +13,7 @@
   AnthropicBackend / OpenAICompatBackend   模型后端（多图问答）
   FrameGrabber                            三路相机取帧
   main()                                  入口
-主循环在 agentic_loop.py，工具在 fine_tools.py，几何在 workflow.py。
+主循环在 agent.py，工具在 tools.py，场景在 scene.py，几何在 geometry.py。
 
 依赖：PYTHONPATH 含仓库根目录；OrcaLab 运行时在线（50051 + 相机 7070/7072/7074）。
 """
@@ -44,9 +44,7 @@ def _bootstrap_path():
 
 _repo_root = _bootstrap_path()
 
-# --- 任务定义（当前任务：4 件药品 → 2 个筐） ---
-OBJECT_KEYS = ("calcium", "melatonin", "herbbox", "pharyngitis")
-ARM_FOR = {"calcium": "left", "melatonin": "left", "pharyngitis": "right", "herbbox": "right"}
+# 任务定义在 tasks/medication_sorting.yaml（见 taskspec.TaskSpec），入口不再硬编码物体。
 CAMERA_PORTS = (("head_cam", 7070), ("camera_left", 7074), ("camera_right", 7072))
 
 MAX_IMAGE_SIDE = 512
@@ -316,9 +314,9 @@ def selfcheck(endpoint="127.0.0.1:50051") -> int:
     print("== 2. 仓库模块 ==")
 
     def imp():
-        from examples.euler.medication_sorting import execution, fine_tools, workflow  # noqa: F401
+        from examples.euler.medication_sorting import execution, geometry, scene, tools  # noqa: F401
 
-        return "workflow / fine_tools / execution 可导入"
+        return "scene / geometry / tools / execution 可导入"
 
     check("examples.euler.medication_sorting", imp)
 
@@ -335,7 +333,7 @@ def selfcheck(endpoint="127.0.0.1:50051") -> int:
                 s.connect(("127.0.0.1", port))
                 res.append(f"{name}:{port}✓")
             except Exception:
-                raise RuntimeError(f"{name}:{port} 未监听（OrcaLab 运行时没起？）")
+                raise RuntimeError(f"{name}:{port} 未监听（OrcaLab 运行时没起？）") from None
             finally:
                 s.close()
         return " ".join(res)
@@ -414,9 +412,27 @@ def _load_dotenv():
     return False
 
 
+class DeepSeekBackend(AnthropicBackend):
+    """DeepSeek 的 Anthropic 兼容端点（视觉模型用 deepseek-flash）。
+
+    环境变量：DEEPSEEK_API_KEY / DEEPSEEK_MODEL（默认 deepseek-flash）/
+              DEEPSEEK_BASE_URL（默认 https://api.deepseek.com/anthropic）。
+    """
+
+    name = "deepseek"
+
+    def __init__(self, **kw):
+        kw.setdefault("api_key", os.environ.get("DEEPSEEK_API_KEY", "") or os.environ.get("FABLE_API_KEY", ""))
+        kw.setdefault("model", os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"))
+        kw.setdefault("base_url", os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/anthropic"))
+        super().__init__(**kw)
+
+
 def _make_backend(name: str):
     if name == "anthropic":
         return AnthropicBackend()
+    if name == "deepseek":
+        return DeepSeekBackend()
     if name == "openai":
         return OpenAICompatBackend()
     raise SystemExit(f"未知后端：{name}")
@@ -425,8 +441,22 @@ def _make_backend(name: str):
 def main(argv=None):
     _load_dotenv()
     ap = argparse.ArgumentParser(description="Agent-as-Policy（单机版）")
-    ap.add_argument("--backend", choices=["anthropic", "openai"], default="anthropic",
+    ap.add_argument("--backend", choices=["anthropic", "deepseek", "openai"], default="anthropic",
                     help="模型后端（默认 anthropic）")
+    ap.add_argument("--homography", type=Path, default=Path("layouts/homography.json"),
+                    help="单应矩阵文件（每个场景一份；新场景先用 --calibrate 生成）")
+    ap.add_argument("--task", type=Path, default=Path("tasks/medication_sorting.yaml"),
+                    help="任务 YAML（默认 tasks/medication_sorting.yaml；换任务改一行配置即可）")
+    ap.add_argument("--list-bodies", action="store_true",
+                    help="列出场景里可移动的 body（名字/位置/尺寸），用于写 YAML 与标定")
+    ap.add_argument("--calibrate", action="store_true",
+                    help="为当前场景标定单应矩阵，写到 --homography")
+    ap.add_argument("--ref-body", default=None,
+                    help="标定参考物体的 body 名（配合 --calibrate）")
+    ap.add_argument("--ref-desc", default=None,
+                    help="标定参考物体的视觉描述，模型看图用（如「黄色收纳筐」）")
+    ap.add_argument("--ref-arm", default="left", choices=["left", "right"],
+                    help="标定时用哪只手（默认 left）")
     ap.add_argument("--selfcheck", action="store_true", help="环境自检")
     ap.add_argument("--endpoint", default="127.0.0.1:50051")
     ap.add_argument("--output", type=Path, default=Path("./agent_out"))
@@ -443,9 +473,16 @@ def main(argv=None):
     if args.selfcheck:
         return selfcheck(args.endpoint)
 
-    from examples.euler.medication_sorting.agentic_loop import run_agentic_episode
+    from examples.euler.medication_sorting.agent import (
+        print_movable_bodies, run_agentic_episode, run_calibration,
+    )
 
     backend = _make_backend(args.backend)
+
+    if args.list_bodies:
+        return print_movable_bodies(args)
+    if args.calibrate:
+        return run_calibration(args, backend)
     return 0 if run_agentic_episode(args, backend) else 1
 
 

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import mj_joint_strip as strip
+from . import xml_strip as strip
 
 # 保留：左臂 7 + 右臂 7 + 两个夹爪
 KEEP_BOTH_ARMS = (
@@ -99,7 +99,7 @@ def build(xml_path, out_path=None, agent_name: str = "unitree_g1_1") -> ArmOnlyM
         "right_shoulder", "right_elbow", "right_wrist",
         "gripper_l", "gripper_r", "arm_l_end", "arm_r_end",
     )
-    n_col_off = strip.disable_non_chain_collision(out_path, agent_name, keep_tokens)
+    strip.disable_non_chain_collision(out_path, agent_name, keep_tokens)
 
     # 4) 载入精简模型并建立 qpos 补齐器
     mj_str = mujoco.MjModel.from_xml_path(str(out_path))

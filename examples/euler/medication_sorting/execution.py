@@ -270,9 +270,7 @@ class Executor:
             }
         )
         (self.out / "plans.json").write_text(json.dumps(self.plans, indent=2))
-        arm_cn = "左臂" if arm == "left" else "右臂"
-        goal = np.round(position, 4).tolist()
-        print(f"  [工具] move({stage}) → ({goal[0]:+.3f}, {goal[1]:+.3f}, {goal[2]:+.3f})", flush=True)
+        print(f"  [工具] move({stage})", flush=True)
         for part in time_samples(path, dt=0.02, max_velocity=max_velocity, max_acceleration=max_acceleration):
             command = e.command.copy()
             command[ids] = part

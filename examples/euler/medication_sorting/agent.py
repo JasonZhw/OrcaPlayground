@@ -63,18 +63,8 @@ from uuid import uuid4
 import numpy as np
 
 from examples.euler.medication_sorting import lessons as lesson_store
-from examples.euler.medication_sorting.skills import CODE_HINT, SkillResult, classify
-
-# 按【形状 + 方位】描述物体（不靠颜色，避免光照/贴图影响识别）
-OBJ_DESC = {
-    "calcium": "圆柱形药瓶（离机器人更近、靠前的那个）",
-    "melatonin": "圆柱形药瓶（离机器人更远、靠后的那个）",
-    "pharyngitis": "细长的长方形药盒（窄长条）",
-    "herbbox": "宽扁的长方形药盒（宽而短）",
-}
-BIN_DESC = {"left_bin": "左侧紫色筐", "right_bin": "右侧蓝色筐"}
-DESTINATIONS = {k: "left_bin" if k in ("calcium", "melatonin") else "right_bin" for k in OBJ_DESC}
-
+from examples.euler.medication_sorting.task import TaskSpec
+from examples.euler.medication_sorting.failures import CODE_HINT, SkillResult, classify
 
 class StageFailure(RuntimeError):
     def __init__(self, result):
@@ -82,15 +72,24 @@ class StageFailure(RuntimeError):
         self.result = result
 
 
-def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement_builder=None, verify=None):
-    """Run one bounded episode; dependencies can be replaced without a simulator.
+def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement_builder=None, verify=None):
+    """跑完整个任务：对每件物体依次执行 定位 → 抓取 → 搬运 → 入框，最后复位。
 
-    Each motion either verifies its actual end pose inside Trial.move or returns
-    a failure. Only IK/path failures receive one bounded segmented retry. On a
-    blocked episode we send no further commands, including release/home.
+    这是一条线性的状态机，四个阶段在函数内用横幅标出：
+
+        阶段 1  定位与接近   模型报像素 → 抓取点几何 → 分步靠近
+        阶段 2  抓取         对齐 → 闭合 → 接触确认 → 试抬校验
+        阶段 3  搬运         计算释放点 → 抬安全高度 → 水平移动
+        阶段 4  入框         对齐 → 几何放行 → 释放 → 落地校验
+
+    设计约束：
+    - 每次运动都在 `Trial.move` 内校验实际到位姿态，不通过就返回失败，不会"假装到了"；
+    - 只有 IK / 路径类失败允许一次分段重试，其余失败直接反馈给模型重新决策；
+    - 一旦判定 epblocked，本回合不再发送任何指令（包括释放与复位）；
+    - `grasp_builder / placement_builder / verify` 可注入，便于无仿真单元测试。
     """
     if grasp_builder is None or placement_builder is None or verify is None:
-        from examples.euler.medication_sorting.workflow import (
+        from examples.euler.medication_sorting.geometry import (
             grasp_target, placement_satisfied, placement_targets,
         )
         # placement_satisfied 既作默认 verify，也用作「是否已入筐」的几何判据
@@ -101,7 +100,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    keys = tuple(keys)
+    keys = spec.keys
     scene = tools.scene
     placed = dict.fromkeys(keys, False)
     report = {"status": "running", "placed": placed, "object": None, "stage": "start", "events": []}
@@ -167,31 +166,48 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             xy = tools.point(tools.observe(), description)
             if xy is not None and np.shape(xy) == (2,) and np.isfinite(xy).all():
                 record(stage, SkillResult(True, "ok"), xy=list(xy), attempt=attempt + 1)
-                print(f"  [工具] locate(...) → ({xy[0]:+.3f}, {xy[1]:+.3f})", flush=True)
+                print("  [工具] 视觉定位完成", flush=True)
                 return np.asarray(xy)
         raise StageFailure(SkillResult(False, "unknown", "No valid visual location after 3 observations"))
 
     try:
         record("start")
-        if not keys or len(set(keys)) != len(keys) or any(k not in DESTINATIONS for k in keys):
+        if not keys or len(set(keys)) != len(keys) or any(k not in spec.objects for k in keys):
             raise StageFailure(SkillResult(False, "unknown", "Expected a nonempty set of known task objects"))
         # 开局：大模型观察场景，说出看到什么、打算怎么做
-        print(f"\n  🔭 观察场景 → 决定任务", flush=True)
+        print("\n  🔭 观察场景 → 决定任务", flush=True)
         try:
-            _seen, _plan = tools.survey_scene(tools.observe())
+            observed = tools.survey_scene(tools.observe(), keys=keys)
+            _seen, _plan = observed[0], observed[1]
+            _order = observed[2] if len(observed) > 2 else None
             print(f"  [推理] {_seen}", flush=True)
             print(f"  [执行] {_plan}", flush=True)
+            # 顺序只作建议：必须是合法排列，且同一条手臂上"先近后远"，才采纳。
+            if _order and len(_order) == len(keys) and set(_order) == set(keys):
+                if _order_feasible(spec, scene, _order):
+                    keys = tuple(_order)
+                    placed.clear()
+                    placed.update({k: False for k in keys})
+                    print(f"  [执行] 按模型建议排序：{' → '.join(keys)}", flush=True)
+                else:
+                    print("  [执行] 模型建议的顺序会让远处物体先抓（近处还挡着），按配置顺序处理", flush=True)
+            elif _order:
+                print(f"  [警告] 模型给的顺序不是合法排列，按配置顺序处理：{_order}", flush=True)
         except Exception as _exc:  # noqa: BLE001
             print(f"  ⚠️  开局观察失败：{_exc}", flush=True)
+
+        # ==================================================================
+        # 阶段 1  定位与接近：模型报像素 → 抓取点几何 → 分步靠近
+        # ==================================================================
         for key in keys:
             report["object"] = key
-            arm = "left" if key in ("calcium", "melatonin") else "right"
-            bin_key = DESTINATIONS[key]
+            arm = spec.objects[key].arm
+            bin_key = spec.objects[key].dest
             print(
-                f"\n  🎯 {OBJ_DESC[key]} → {BIN_DESC[bin_key]}（{arm}臂{'侧握' if arm == 'left' else '顶握'}）",
+                f"\n  🎯 {spec.objects[key].desc} → {spec.bins[bin_key]}（{arm}臂{'侧握' if arm == 'left' else '顶握'}）",
                 flush=True,
             )
-            xy = locate(OBJ_DESC[key], "locate_object")
+            xy = locate(spec.objects[key].desc, "locate_object")
             if arm == "right":
                 # 右臂药盒：确认大模型指点确实落在目标药盒上（防抓错物体），
                 # 只做身份校验，不做几何测量对齐（对齐交给大模型判断）。
@@ -207,8 +223,8 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             grip_mode = "侧握（水平前伸）" if arm == "left" else "顶握（竖直下压）"
             offset_dir = "正后方" if arm == "left" else "正上方"
             print(
-                f"  [推理] 物体中心 ({obj_xy[0]:+.3f}, {obj_xy[1]:+.3f})；{grip_mode}，抓取点取{offset_dir} "
-                f"{gap_cm:.0f}cm，预备点比抓取点再高 {lift_cm:.0f}cm；接近方式=先水平对齐 XY、再垂直下压",
+                f"  [推理] {grip_mode}，抓取点取{offset_dir} "
+                f"{gap_cm:.0f}cm，预备点比抓取点再高 {lift_cm:.0f}cm；接近方式=先水平对齐、再垂直下压",
                 flush=True,
             )
             # 安全接近：先保持当前高度【水平】平移到预备抓取点的 XY（不碰物体），
@@ -239,12 +255,16 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             # 做有界重抓（agentic 的失败反馈闭环），而不是一次失败就停。
             grasp_hint = None
             failure_code = None  # 最近一次失败码：用于经验库「失败->成功恢复动作」
+
+        # ==================================================================
+        # 阶段 2  抓取：对齐 → 闭合 → 接触确认 → 试抬校验
+        # ==================================================================
             for regrasp in range(3):
                 for attempt in range(6):
                     record("align_grasp", regrasp=regrasp + 1, attempt=attempt + 1)
                     action, reason, seen, distance = tools.decide_grasp_action(
                         arm,
-                        OBJ_DESC[key],
+                        spec.objects[key].desc,
                         tools.observe(),
                         hint=grasp_hint,
                         lesson=lesson_store.suggest(failure_code) if failure_code else None,
@@ -281,9 +301,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                             delta = np.asarray(direction[action]) * step
                         record("adjust_grasp", delta=delta.tolist())
                         tools.trial.sync()
-                        cur_p, _ = scene.end_pose(arm)
-                        new_p = cur_p + delta
-                        print(f"  [工具] micro_adjust({action} {step * 100:.1f}cm) → ({new_p[0]:+.3f}, {new_p[1]:+.3f}, {new_p[2]:+.3f})", flush=True)
+                        print(f"  [工具] micro_adjust({action} {step * 100:.1f}cm)", flush=True)
                         moved = tools.micro_adjust(arm, dx=delta[0], dy=delta[1], dz=delta[2], target=key)
                         record(report["stage"], moved)
                         if not moved.ok:
@@ -354,21 +372,26 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             check(carried is not None, "lost_grasp", "Grasp budget exhausted after regrasp attempts")
 
             # 已夹住 → 切换到入框状态
-            print(f"  [执行] 夹持确认通过 → 切换入框状态", flush=True)
-            bxy = locate(BIN_DESC[bin_key], "locate_bin")
+            print("  [执行] 夹持确认通过 → 切换入框状态", flush=True)
+            # 确认模型此刻还能看见筐（找不到会抛 StageFailure）；落点坐标用仿真真值更准
+            locate(spec.bins[bin_key], "locate_bin")
             tools.trial.sync()
+
+        # ==================================================================
+        # 阶段 3  搬运：计算释放点 → 抬安全高度 → 水平移动（被挡则由模型决定绕行）
+        # ==================================================================
             record("build_placement")
             p, rotation = scene.end_pose(arm)
             # 夹住物品后手腕朝向锁定 = 抓取时的朝向，搬运全程不转（否则手腕晃动很别扭）
             rotation = np.asarray(gt["rotation"], dtype=float)
-            targets = placement_builder(scene, key, carried, rotation)
+            targets = placement_builder(scene, key, carried, rotation, bin_key)
             # XY 目标 = 筐中心 减去「物体相对手腕的偏移」，让【物体】而不是手腕对准筐口。
             # 侧握时物体挂在手腕旁 20cm，直接用手腕对准会让物体偏出筐口。
             bin_p = scene.body_pose(bin_key)[0]
             obj_offset = np.asarray(rotation) @ np.asarray(carried.local_position)
             # 投放位置交给大模型决定：看筐里已经有什么、这件该放哪
             plan_ok, pdx, pdy, pseen = tools.plan_placement(
-                arm, OBJ_DESC[key], BIN_DESC[bin_key], tools.observe())
+                arm, spec.objects[key].desc, spec.bins[bin_key], tools.observe())
             print(f"  [推理] {pseen or '（模型未描述）'}", flush=True)
             # 大模型的投放偏移限制在筐内安全范围（±4cm），避免模型给出过大偏移
             # 导致物体实际落点超出筐口（几何验证会判定释放区外）。
@@ -378,7 +401,6 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             hand_xy = object_xy - obj_offset[:2]
             # 搬运悬停高度 = 释放点上方 8cm（比贴筐口再高 3cm，避免物体底部擦到筐沿）。
             above = np.array([hand_xy[0], hand_xy[1], targets["release"][2] + 0.08])
-            release = np.array([hand_xy[0], hand_xy[1], targets["release"][2]])
             # 安全高度：抬到能越过筐沿即可。搬运时如果物体下方碰到东西（IK/碰撞失败），
             # 不直接停、也不写死抬升量——交给大模型看画面判断"再抬高多少厘米"，循环推理执行。
             # 不做人为高度上限：真够不到 IK 会失败，由恢复逻辑处理
@@ -400,8 +422,8 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                     # 交给大模型看画面决定怎么绕：优先从空着的一侧横移，其次才抬高
                     raise_cm, lateral_cm, why = tools.decide_carry_recovery(
                         arm,
-                        OBJ_DESC[key],
-                        BIN_DESC[bin_key],
+                        spec.objects[key].desc,
+                        spec.bins[bin_key],
                         tools.observe(),
                         hint=carry_hint or exc.result.code,
                     )
@@ -416,8 +438,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                         move(arm, [p_now[0], p_now[1], new_z], r_now, key + f"_raise_{carry_try}", carried=carried)
                         safe = new_z
                     print(
-                        f"  [工具] carry ✗ → 抬高 {raise_cm:.0f}cm、横移 {lateral_cm:+.0f}cm 后重试"
-                        f"（z={safe:.3f}, 目标x={above[0]:+.3f}）",
+                        f"  [工具] carry ✗ → 抬高 {raise_cm:.0f}cm、横移 {lateral_cm:+.0f}cm 后重试",
                         flush=True,
                     )
                     carry_hint = (
@@ -436,12 +457,12 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                 # 先看【几何】：物体已经在筐口范围内就直接可下放，不依赖大模型主观判断
                 # （大模型偶尔会把左右筐看混，导致反复往反方向微调）。
                 if tools.release_ready(key, bin_key):
-                    print(f"  [执行] 几何检查通过（物体已在筐口范围）→ 可以下放", flush=True)
+                    print("  [执行] 几何检查通过（物体已在筐口范围）→ 可以下放", flush=True)
                     break
                 action, reason, seen, distance = tools.decide_place_action(
                     arm,
-                    OBJ_DESC[key],
-                    BIN_DESC[bin_key],
+                    spec.objects[key].desc,
+                    spec.bins[bin_key],
                     tools.observe(),
                     hint="几何检查显示物体还不在筐口范围内（可能偏在一侧），请据此给出该往哪移。" if attempt > 0 else None,
                 )
@@ -456,11 +477,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                     step = np.clip(err, -0.02, 0.02)
                     if float(np.linalg.norm(step)) < 0.003:
                         step = np.array([0.0, 0.0])  # 误差已很小，别抖
-                    print(
-                        f"  [执行] 模型认为对齐，但几何未通过 → 按几何误差朝筐心微调 "
-                        f"({step[0]*100:+.1f}, {step[1]*100:+.1f})cm",
-                        flush=True,
-                    )
+                    print("  [执行] 模型认为已对齐，但几何未通过 → 朝筐心微调", flush=True)
                     require(tools.micro_adjust(arm, dx=step[0], dy=step[1], dz=0.0, carried=carried))
                     continue
                 directions = {"left": (1, 0, 0), "right": (-1, 0, 0), "forward": (0, -1, 0), "backward": (0, 1, 0)}
@@ -483,11 +500,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             tools.trial.sync()
             obj_p, _ = scene.body_pose(key)
             ready = tools.release_ready(key, bin_key)
-            print(
-                f"  [执行] 几何检查 {'通过' if ready else '未通过'}，物体位于 "
-                f"({obj_p[0]:+.3f}, {obj_p[1]:+.3f}, {obj_p[2]:+.3f})",
-                flush=True,
-            )
+            print(f"  [执行] 释放前几何检查：{'通过' if ready else '未通过'}", flush=True)
             record("verify_release", object_position=obj_p.tolist(), hand_position=p.tolist())
             # 不再重复问大模型“能不能下放”——align_place 循环里已经确认过 aligned，
             # 而且这中间没有任何运动（不做 Z 下放），重复判定只会因模型抖动误否决释放。
@@ -495,6 +508,10 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             check(
                 tools.release_ready(key, bin_key), "missed_bin", "Actual object geometry is outside the release region"
             )
+
+        # ==================================================================
+        # 阶段 4  入框：对齐 → 几何放行 → 释放 → 落地校验
+        # ==================================================================
             record("release")
             require(tools.release(arm))
             # 释放后让物体自由落进筐里再检查：不 step 的话它会停在释放高度，
@@ -502,7 +519,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
             tools.trial.hold(200, "settle_after_release")
             tools.trial.sync()
             record("verify_placement")
-            visual, description = tools.judge(tools.observe(), f"{OBJ_DESC[key]}是否已放进{BIN_DESC[bin_key]}？")
+            visual, description = tools.judge(tools.observe(), f"{spec.objects[key].desc}是否已放进{spec.bins[bin_key]}？")
             tools.trial.sync()
             check(
                 visual is True and bool(verify(scene, key, bin_key)),
@@ -519,7 +536,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
                 tools.trial.sync()
                 p_now, r_now = scene.end_pose(arm)
                 record("home_raise", message="Direct home blocked; raise then retry")
-                print(f"  [工具] home ✗ 被挡 → 先抬高再回家", flush=True)
+                print("  [工具] home ✗ 被挡 → 先抬高再回家", flush=True)
                 move(
                     arm,
                     [p_now[0], p_now[1], float(p_now[2]) + 0.10],
@@ -531,7 +548,7 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
         record("verify_all")
         tools.trial.sync()
         for key in keys:
-            placed[key] = bool(placed[key] and verify(scene, key, DESTINATIONS[key]))
+            placed[key] = bool(placed[key] and verify(scene, key, spec.objects[key].dest))
         report["status"] = "complete" if all(placed.values()) else "incomplete"
         record("finished")
         return report["status"] == "complete"
@@ -541,6 +558,127 @@ def execute_tasks(tools, keys, home_poses, out, *, grasp_builder=None, placement
         record(report["stage"], result)
         print(f"停止于 {report['object']}/{report['stage']}: [{result.code}] {result.message}", flush=True)
         return False
+
+
+def _order_feasible(spec, scene, order):
+    """校验处理顺序是否"同一条手臂上先近后远"。
+
+    远处物体先抓时，近处物体还挡在路上，IK 常常只能找到碰撞解，
+    表现为 `ik_no_solution ... best position error 0`（位置够了但解被拒）。
+    这个规则比模型看图判断更可靠，所以模型的顺序必须过这一关。
+    """
+    for arm in ("left", "right"):
+        on_arm = [k for k in order if spec.objects[k].arm == arm]
+        if len(on_arm) < 2:
+            continue
+        hand, _ = scene.end_pose(arm)
+        dist = {}
+        for k in on_arm:
+            obj, _ = scene.body_pose(k)
+            dist[k] = float(((obj[0] - hand[0]) ** 2 + (obj[1] - hand[1]) ** 2) ** 0.5)
+        for near, far in zip(on_arm, on_arm[1:], strict=False):
+            if dist[near] > dist[far] + 0.02:  # 2cm 容差
+                return False
+    return True
+
+
+def _open_scene(args):
+    """打开仿真、加载场景模型，返回 (loop, channel, bridge, env, scene, work)。调用方负责关闭。"""
+    import asyncio
+    import grpc
+    from orca_gym.core.euler.orca_studio_bridge import OrcaStudioBridge
+    from orca_gym.protos.mjc_message_pb2_grpc import GrpcServiceStub
+
+    from examples.euler.medication_sorting.execution import SortingEnv
+    from examples.euler.medication_sorting.scene import Scene, prepare_model
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    channel = grpc.aio.insecure_channel(
+        args.endpoint, options=[("grpc.max_receive_message_length", 256 * 1024 * 1024)]
+    )
+    bridge = OrcaStudioBridge(GrpcServiceStub(channel))
+    source = loop.run_until_complete(asyncio.wait_for(bridge.load_model_xml(), 30))
+    work = Path(args.output) / "calibration"
+    work.mkdir(parents=True, exist_ok=True)
+    scene_xml = prepare_model(source, work / "scene.xml")
+    env = SortingEnv(str(scene_xml), endpoint=args.endpoint)
+    scene = Scene(str(scene_xml))
+    loop.run_until_complete(bridge.pause_simulation())
+    return loop, channel, bridge, env, scene, work
+
+
+def _close_scene(loop, channel, env):
+
+    try:
+        env.close()
+    finally:
+        loop.run_until_complete(channel.close())
+        loop.close()
+
+
+def print_movable_bodies(args) -> bool:
+    """列出场景里可移动 body 的名字、位置、包围盒尺寸，方便写 YAML / 选标定参考物体。"""
+    import numpy as np
+
+    from examples.euler.medication_sorting.scene import vertices
+
+    loop, channel, bridge, env, scene, _ = _open_scene(args)
+    try:
+        print(f"场景可移动 body（共 {len(scene.movable_bodies())} 个）：", flush=True)
+        for name in scene.movable_bodies():
+            try:
+                p, _ = scene.body_pose(name)
+                v = vertices(scene, name)
+            except (ValueError, KeyError):
+                print(f"  {name}  （无碰撞几何）", flush=True)
+                continue
+            ext = (v.max(axis=0) - v.min(axis=0)) * 100
+            vol = float(np.prod(ext))
+            print(f"  {name}", flush=True)
+            print(f"      pos=({p[0]:+.3f},{p[1]:+.3f},{p[2]:+.3f})  {ext[0]:.1f}x{ext[1]:.1f}x{ext[2]:.1f} cm  体积 {vol:.0f} cm³", flush=True)
+    finally:
+        _close_scene(loop, channel, env)
+    return True
+
+
+def run_calibration(args, backend) -> bool:
+    """为当前场景标定单应矩阵，写到 --homography。"""
+    import numpy as np
+
+    from examples.euler.medication_sorting.grounding import calibrate
+
+    if not args.ref_body:
+        print("缺少 --ref-body（参考物体的 body 名）；先用 --list-bodies 查看可选名字", flush=True)
+        return False
+    loop, channel, bridge, env, scene, _ = _open_scene(args)
+    try:
+        env.set_joint_qvel(np.zeros(env.model.nv))
+        env.mj_forward()
+        from examples.euler.medication_sorting.scene import vertices
+
+        p, _ = scene.body_pose(args.ref_body)
+        v = vertices(scene, args.ref_body)
+        ext = (v.max(axis=0) - v.min(axis=0))
+        span = float(min(ext[0], ext[1]))
+        # 网格半宽按参考物尺寸定：小物体 3cm，大物体到 10cm。
+        # 大物体网格太小的话，像素几乎不动，拟合条件很差。
+        rng = min(0.10, max(0.03, span * 0.3))
+        print(f"  参考物 {args.ref_body} 尺寸 {span*100:.1f} cm → 标定网格 ±{rng*100:.1f} cm", flush=True)
+        res = calibrate(
+            bridge, scene, env, getattr(args, "ref_arm", "left"), backend,
+            object_key=args.ref_body,
+            ref_desc=args.ref_desc or args.ref_body,
+            x_range=(float(p[0]) - rng, float(p[0]) + rng),
+            y_range=(float(p[1]) - rng, float(p[1]) + rng),
+            table_z=float(p[2]),
+            out_path=str(args.homography),
+            loop=loop,
+        )
+        print(f"\n标定完成：残差 {res['residual'] * 1000:.1f} mm → {args.homography}", flush=True)
+    finally:
+        _close_scene(loop, channel, env)
+    return True
 
 
 def run_agentic_episode(args, backend) -> bool:
@@ -553,11 +691,11 @@ def run_agentic_episode(args, backend) -> bool:
     from orca_gym.core.euler.orca_studio_bridge import OrcaStudioBridge
     from orca_gym.protos.mjc_message_pb2_grpc import GrpcServiceStub
 
-    from examples.euler.medication_sorting.agent_policy import OBJECT_KEYS, FrameGrabber
+    from examples.euler.medication_sorting.main import FrameGrabber
     from examples.euler.medication_sorting.execution import Executor, SortingEnv
-    from examples.euler.medication_sorting.fine_tools import ArmTools
-    from examples.euler.medication_sorting.visual_grounding import load_homography
-    from examples.euler.medication_sorting.workflow import Scene, prepare_model
+    from examples.euler.medication_sorting.tools import ArmTools
+    from examples.euler.medication_sorting.grounding import load_homography
+    from examples.euler.medication_sorting.scene import Scene, prepare_model
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:8]
     out = Path(args.output) / run_id
@@ -604,8 +742,10 @@ def run_agentic_episode(args, backend) -> bool:
         grabber = FrameGrabber(bridge=bridge, loop=loop) if args.capture_images else None
         if grabber:
             cleanup.callback(grabber.close)
-        path = Path("layouts/homography.json")
+        path = Path(getattr(args, "homography", None) or "layouts/homography.json")
         grounder = load_homography(path) if path.exists() else None
+        if grounder is None:
+            print(f"  [警告] 找不到单应矩阵 {path}，视觉定位会失败；先跑 --calibrate 生成", flush=True)
         tools = ArmTools(trial, scene, env, bridge, loop, grabber, grounder, backend)
         # 相机暖机：刚开流时前几帧可能没就绪，先空拍几张让三路相机稳定，
         # 避免第一次 observe 取不到帧导致视觉定位直接失败。
@@ -613,4 +753,5 @@ def run_agentic_episode(args, backend) -> bool:
             for _ in range(4):
                 tools.observe()
                 time.sleep(0.2)
-        return execute_tasks(tools, OBJECT_KEYS, home_poses, out)
+        spec = TaskSpec.load(getattr(args, "task", None) or "tasks/medication_sorting.yaml")
+        return execute_tasks(tools, spec, home_poses, out)

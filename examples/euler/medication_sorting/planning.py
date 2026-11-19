@@ -117,7 +117,6 @@ def solve_ik(
         )
 
     # 回退：scipy 随机重启（慢，但通过碰撞后验能找到无碰撞解）
-    from scipy.optimize import least_squares
 
     d = mujoco.MjData(m)
     d.qpos[:] = seed_qpos
@@ -253,7 +252,7 @@ def plan_joint_path(
             i, j = sorted(rng.choice(len(path), 2, replace=False))
             if j > i + 1 and edge_valid(path[i], path[j]):
                 path = path[: i + 1] + path[j:]
-        if not all(edge_valid(a, b) for a, b in zip(path[:-1], path[1:])):
+        if not all(edge_valid(a, b) for a, b in zip(path[:-1], path[1:], strict=False)):
             raise PlanningError("Path failed final collision validation")
         return np.asarray(path)
 
@@ -300,7 +299,7 @@ def time_samples(path, dt=0.02, max_velocity=0.5, max_acceleration=0.8):
     _positive(max_velocity, "max_velocity")
     _positive(max_acceleration, "max_acceleration")
     samples = [path[:1]]
-    for start, goal in zip(path[:-1], path[1:]):
+    for start, goal in zip(path[:-1], path[1:], strict=False):
         distance = np.max(np.abs(goal - start))
         if distance == 0:
             continue
@@ -341,7 +340,7 @@ def rebase_carried_for_planning(scene, arm, measured_qpos, commanded_qpos, carri
     This is a per-move collision proxy only. Never replace the measured grasp
     relation used for slip/placement checks, or modify physical object state.
     """
-    from .workflow import CarriedObject
+    from .scene import CarriedObject
 
     if carried.arm != arm:
         raise ValueError("Carried object belongs to a different arm")
