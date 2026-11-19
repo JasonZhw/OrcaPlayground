@@ -71,8 +71,7 @@ examples/euler/medication_sorting/
 ├── execution.py         仿真推进、夹爪控制、到位校验
 ├── grounding.py  单应矩阵视觉接地（像素 → 桌面坐标）
 ├── task.py          任务定义（读 tasks/*.yaml）
-├── model_trim.py    模型裁剪（只保留双臂）
-└── xml_strip.py    关节裁剪实现
+└── model_trim.py    裁模型（只保留双臂与夹爪，含 XML 层手术）
 ```
 
 `tasks/` 放任务定义，`layouts/` 放每个场景的单应矩阵标定。

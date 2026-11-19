@@ -1,4 +1,10 @@
-"""Solve arm targets, plan collision-checked paths, and sample joint commands."""
+"""运动求解：逆运动学、碰撞检查路径规划、关节指令采样。
+
+  solve_ik          mink 差分 IK，多随机重启，取"离当前位形最近"的可行解
+  plan_joint_path   双向 RRT-Connect，直线可达则直连，成功后做随机短路
+  time_samples      五次多项式限速限加速，输出可下发的关节指令流
+  servo_bias_feasible  用 qfrc_bias 检查伺服余量
+"""
 
 from collections.abc import Callable
 

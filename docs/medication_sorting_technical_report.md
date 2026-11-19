@@ -245,8 +245,7 @@ bins:
 | `execution.py` | 仿真推进、夹爪标定与指令、到位校验、运动执行 |
 | `grounding.py` | 单应矩阵拟合/标定与像素↔桌面坐标换算（Hartley 归一化 + RANSAC） |
 | `task.py` | 任务定义：读 `tasks/*.yaml`（物体 / 筐 / 手臂） |
-| `model_trim.py` | 生成只含双臂的模型并封装 qpos 补齐 |
-| `xml_strip.py` | 关节裁剪的 XML 层实现（删关节、烘焙位姿、关碰撞） |
+| `model_trim.py` | 裁模型：XML 层删关节、烘焙位姿、关碰撞，并封装 qpos 补齐与环境 |
 
 ### 4.2 数据流
 

@@ -1,4 +1,9 @@
-"""Execute planned arm motions and latch gripper commands while recording each step."""
+"""执行层：推进仿真、下发夹爪指令、逐帧执行规划好的关节轨迹。
+
+  SortingEnv   MuJoCo 环境（控制步 10 帧、底座固定）
+  Grippers     16 个夹爪执行器 ↔ 一个 0~1 的闭合量（含标定曲线）
+  Executor     把"规划好的路径"变成逐帧指令，并在每段运动后校验实际位姿
+"""
 
 import asyncio
 import json
@@ -10,7 +15,7 @@ from scipy.spatial.transform import Rotation
 
 from .planning import plan_motion, rebase_carried_for_planning, smooth_blend, time_samples
 
-# 夹爪标定：归一化闭合量 → 每条手指两个执行器的目标值（原 recording.py，随采集代码移除后内联）
+# 夹爪标定：归一化闭合量 → 每条手指两个执行器的目标值（自采集代码内联而来）
 SCALAR_GRIPPER_VERSION = "medication_closure_v1"
 CLOSURE_KNOTS = np.array([0.0, 0.4, 0.7, 1.0])
 AD_KNOTS = np.array([[0.0, -1.0], [0.0, 0.97], [0.28, 0.9], [0.28, 1.45]])
@@ -186,7 +191,7 @@ class Executor:
             self.tick(self.env.command, stage)
 
     def align_initial_command(self):
-        """Ease out the initial servo preload before planning or recording starts."""
+        """起步前先把伺服预紧缓出来，避免第一条轨迹被残差带偏。"""
         for _ in range(3):
             start = self.env.command.copy()
             goal = start.copy()

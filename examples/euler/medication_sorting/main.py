@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-"""Agent-as-Policy 入口：视觉大模型决策 + 细粒度工具执行。
-
-运行
-----
-    export FABLE_API_KEY=sk-ant-...
-    python examples/euler/medication_sorting/agent_policy.py
-    python examples/euler/medication_sorting/agent_policy.py --selfcheck    # 环境自检
-
-结构
-----
-本文件只负责「起环境 + 建工具 + 调模型」：
-  AnthropicBackend / OpenAICompatBackend   模型后端（多图问答）
-  FrameGrabber                            三路相机取帧
-  main()                                  入口
-主循环在 agent.py，工具在 tools.py，场景在 scene.py，几何在 geometry.py。
-
-依赖：PYTHONPATH 含仓库根目录；OrcaLab 运行时在线（50051 + 相机 7070/7072/7074）。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 
-# 自动定位仓库根目录并加入 sys.path，这样直接 `python examples/.../agent_policy.py` 也能跑
 def _bootstrap_path():
     here = Path(__file__).resolve()
     for parent in here.parents:
@@ -44,7 +23,6 @@ def _bootstrap_path():
 
 _repo_root = _bootstrap_path()
 
-# 任务定义在 tasks/medication_sorting.yaml（见 taskspec.TaskSpec），入口不再硬编码物体。
 CAMERA_PORTS = (("head_cam", 7070), ("camera_left", 7074), ("camera_right", 7072))
 
 MAX_IMAGE_SIDE = 512
@@ -282,7 +260,7 @@ def _load_scene(endpoint):
 
 def _short_path(path: str) -> str:
     """把 OrcaLab 的临时路径缩成便于阅读的形式。"""
-    return f"{Path(path).name}  (OrcaLab 生成的世界模型，含机器人/桌子/筐/物体)"
+    return f"{Path(path).name}  —  MuJoCo 场景描述文件"
 
 
 def _probe_model():
@@ -341,7 +319,7 @@ def selfcheck(endpoint="127.0.0.1:50051") -> int:
     check("OrcaLab 与相机", ports)
 
     print("== 4. 场景加载 ==")
-    check("OrcaLab 世界模型(XML)", lambda: _short_path(_load_scene(endpoint)))
+    check("场景模型（MJCF）", lambda: _short_path(_load_scene(endpoint)))
 
     print("== 5. 相机取帧 ==")
 
@@ -391,7 +369,7 @@ def selfcheck(endpoint="127.0.0.1:50051") -> int:
     check("视觉大模型", _probe_model)
 
     print()
-    print("全部通过 ✅ 可以跑：python agent_policy.py" if ok else "有项目失败 ❌ 按上面提示修复")
+    print("全部通过 ✅ 可以跑：python main.py" if ok else "有项目失败 ❌ 按上面提示修复")
     return 0 if ok else 1
 
 

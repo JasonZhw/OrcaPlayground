@@ -122,7 +122,20 @@ ss -tln | grep -E '50051|7070|7072|7074'
 
 ## 3. 配置模型 API
 
-模型密钥**不写进代码**，放在仓库根目录的 `.env`（已被 `.gitignore` 排除，不会提交）。
+模型密钥**不写进代码**，放在仓库根目录的 `.env` 里（已在 `.gitignore` 中，不会被提交）。
+
+### 第一步：申请 API key
+
+| 供应商 | 申请地址 | 说明 |
+|---|---|---|
+| Anthropic（默认） | <https://console.anthropic.com> → API Keys → Create Key | 需要能调用视觉模型 |
+| DeepSeek（可选） | <https://platform.deepseek.com> → API Keys | 模型名用 `deepseek-flash`（支持图片输入） |
+
+拿到形如 `sk-ant-...` 或 `sk-...` 的字符串。
+
+### 第二步：新建 `.env` 并填入
+
+在**仓库根目录**（和 `README.md` 同级）新建 `.env`：
 
 ```bash
 cd ~/SY/OrcaPlayground-medication-sorting
@@ -134,7 +147,9 @@ EOF
 chmod 600 .env
 ```
 
-程序启动时会自动向上查找并加载 `.env`（`agent_policy._load_dotenv`），已存在的环境变量不会被覆盖。
+把 `FABLE_API_KEY` 换成你申请到的 key。
+
+程序启动时会自动向上查找并加载 `.env`（`main._load_dotenv`），已存在的环境变量不会被覆盖。
 
 ### 换模型供应商
 
@@ -303,8 +318,7 @@ python examples/euler/medication_sorting/main.py \
 | `planning.py` | mink 逆运动学、RRT-Connect 路径规划、限速采样 |
 | `execution.py` | 仿真推进、夹爪控制、到位校验 |
 | `grounding.py` | 单应矩阵视觉接地（像素 → 桌面坐标） |
-| `model_trim.py` | 裁模型：只保留双臂 + 夹爪 |
-| `xml_strip.py` | 关节裁剪的底层实现 |
+| `model_trim.py` | 裁模型：只保留双臂 + 夹爪（XML 手术 + 环境封装 + qpos 补齐） |
 
 ---
 

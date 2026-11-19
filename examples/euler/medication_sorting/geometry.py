@@ -100,7 +100,7 @@ def placement_inside(center_in_bin, half_floor_xy, lowest_z):
 def grasp_target(scene, arm, key, yaw_deg=0.0, center_xy=None, no_offset=False):
     """Return a grasp pose derived from the current object geometry (metres, world frame).
 
-    center_xy：可选 (x, y)。视觉接地（L1）时用模型报的粗位置覆盖物体中心的
+    center_xy：可选 (x, y)。视觉接地时用模型报的粗位置覆盖物体中心的
     真实 x/y，让抓取点围绕「模型看到的位置」计算，而非真值。
     no_offset：True 时不做手腕偏移（直接到物体抓取中心），agentic 流程靠
     腕摄像头微调来对齐，不预先给 0.133 偏差。
@@ -130,16 +130,6 @@ def grasp_target(scene, arm, key, yaw_deg=0.0, center_xy=None, no_offset=False):
         # agentic 流程：直接到物体抓取中心，不做手腕偏移，靠腕摄像头微调对齐
         grasp = grip_center
     else:
-        # 偏移方向按物体/手臂决定（沿手的接近轴）：
-        #   左臂瓶子=侧握，接近轴水平 → 手腕在物体侧后方
-        #   右臂盒子=顶握，接近轴竖直 → 手腕在物体正上方
-        # 偏移量=手腕到夹爪中心的距离。
-        # 偏移量=手腕到夹爪中心的距离，四个物体统一用 0.16：
-        #   左臂瓶子=侧握（水平），右臂盒子=顶握（竖直），值一样、方向由旋转决定。
-        # 预备抓取点离物体约 17cm，给前伸 6cm + 微调留冗余；
-        # X 对齐大模型判断的坐标，只有接近轴带偏移，横向靠前伸+左右微调抵消。
         grasp = grip_center - rotation @ np.array([0.0, 0.0, 0.18])
-    # 预备抓取点抬高 10cm（实测 6.5cm 太低，前臂会扫到瓶子导致 IK 无解；
-    # 8cm 以上就稳定可达），到手后再下放到抓取点。
     pre = grasp + np.array([0, 0, 0.08])
     return {"object_position": p, "position": grasp, "rotation": rotation, "approach": pre}

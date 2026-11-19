@@ -1,56 +1,39 @@
-"""Agent-as-Policy 执行框架（对齐 agentic robotics 的「感知→决策→执行→校验」闭环）。
+"""Agent-as-Policy 执行框架：感知 → 决策 → 执行 → 校验 的闭环。
 
 设计思路
 --------
-大模型是决策大脑，不直接碰底层运动。每个动作都返回结构化 SkillResult（含失败码），
-失败码会翻译成中文提示喂回给大模型，让它据此选择恢复动作——这就是 agentic 的
-「失败反馈闭环」，而不是脚本式的一次失败就停。
+大模型是决策大脑，不直接碰底层运动。每个动作都返回结构化的输出，
+失败码翻译成中文提示喂回模型，让它据此选择下一步的动作。
 
-每个物体走两个阶段，两阶段共享同一套循环：
+每个物体走四个阶段（`execute_tasks` 内有分节横幅）：
 
-  抓取阶段 Grasp
-    locate_object   大模型看俯视图定位物体（单应矩阵接地）
-    approach/descend 到预抓取点（带标定偏移），张开夹爪
-    align_grasp      大模型看腕部+俯视图逐轮决策 left/right/forward/backward/grasp
-                     （药瓶侧握 = Y 方向前伸，药盒顶握 = Z 方向下压，同一套循环）
-    close            三段式闭合 + 接触确认 → 建立抓持关系 carried
-    test_lift        抬 3cm，物体跟着起来且仍有接触才算「夹稳」
-    verify_grasp     失败（lost_grasp）→ 喂回失败码，有界重抓 ≤3 次
+  阶段 1  定位与接近
+    locate_object    模型看俯视图定位物体（单应矩阵接地）
+    approach/descend 先水平对齐、再垂直下探到预抓取点，避免斜向扫碰物体
 
-  放置阶段 Place
-    locate_bin       大模型定位目标筐
-    plan_placement   大模型看筐内已有几件，决定这一件放筐里哪个位置（相对筐中心偏移）
-    lift_safe/carry  先抬到筐口上方（释放点 +8cm），再水平搬运（补偿物体相对手腕的偏移）
-                     · 搬运被挡时让大模型看画面决定怎么绕：优先横向绕空位、其次抬高，
-                       最多 6 次，每轮把上一轮尝试的参数喂回去，避免重复
-                     · 搬运用抓取时的固定朝向，全程不转手腕
-    align_place      【几何是唯一放行条件】物体在筐口范围内才下放；
-                     模型说 aligned 但几何没过时，按几何误差朝筐心微调一小步
-                     （模型偶尔会把左右筐看混，不能只信它）
-    release          当前位置直接释放（不再做 Z 下放——筐壁总会挡住，纯属多余动作）
-    settle           释放后 step 200 帧让物体自由落进筐底，再校验
-    verify_placement 视觉 + 几何双重校验是否入筐
+  阶段 2  抓取
+    align_grasp      模型看腕部 + 俯视图，逐轮决策 left/right/forward/backward/grasp
+                     （侧握时 forward 是水平前伸，顶握时是竖直下压，同一套循环）
+    close            三段式闭合 + 接触确认 → 建立抓持关系
+    test_lift        抬 3cm，物体跟着起来且仍有接触，才算夹稳
 
-经验库 lessons（case-based memory，不训练模型）
-  agent_out/lessons.json 累积「失败码 → 成功恢复动作」。下次遇到同类失败时，
-  把「历史上哪些动作救回来过」塞进 prompt。跑得越多经验越丰富。
+  阶段 3  搬运
+    plan_placement   模型看筐内已有几件，决定这一件放筐里哪个位置
+    lift_safe/carry  先抬到筐口上方，再水平搬运（补偿物体相对手腕的偏移）；
+                     被挡时让模型看画面决定绕行（优先横向走空位，其次抬高）
 
-工程 trick（保留）
-  - arm-only 模型：裁掉躯干/腿/头，且关闭它们的碰撞体（保留视觉），避免手臂撞躯干
-  - 手指全链接触豁免：侧握时手指中段碰物体不算碰撞
-  - 抓持关系 carried：抬升/搬运时碰撞检查忽略「手-物体」接触
-  - 大跳移动失败时降级小步（step_move_to），每步重解 IK
-  - 释放前接触检查放在下放【之前】（下放到筐底后物体被托住、接触自然松，那不是掉）
-  - 物体相对手腕的偏移补偿：侧握物体挂在手腕旁 20cm，投放点要让【物体】对准筐口
-  - 到位判定容差 1.5cm + 二次保持：高位置伺服有重力残差，多保持一会儿再判
-  - 不做人为高度上限：够不够得到交给 IK 决定，失败由恢复逻辑接手
-  - 模型输出非法 / 微调失败都不终止任务，一律反馈给模型重新规划
-  - 药盒顶握步长自适应（2~6cm），药瓶侧握保持固定 6cm
+  阶段 4  入框
+    align_place      几何是唯一放行条件：物体在筐口范围内才允许下放；
+                     模型说对齐但几何没过时，按几何误差朝筐心微调
+    release          当前位置直接释放（向下的 Z 下放会被筐壁挡住，是多余动作）
+    verify_placement 释放后等物体落底，再做视觉 + 几何双重校验
 
-安全规则
-  - 所有运动都经过碰撞/限位/伺服余量检查
-  - 失败路径绝不打开「可能抓着东西」的夹爪
-  - 未知感知 / 不可执行的运动一律阻止，不猜测
+经验库 lessons（不训练模型）
+  `agent_out/lessons.json` 累积「失败码 → 成功恢复动作」，
+  下次遇到同类失败时把历史上奏效的动作喂进 prompt。
+
+模型裁剪
+  `model_trim` 只保留双臂与夹爪，腿/腰/躯干（含其碰撞体）被删除，降低物理开销。
 """
 
 from __future__ import annotations
@@ -83,7 +66,7 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
         阶段 4  入框         对齐 → 几何放行 → 释放 → 落地校验
 
     设计约束：
-    - 每次运动都在 `Trial.move` 内校验实际到位姿态，不通过就返回失败，不会"假装到了"；
+    - 每次运动都在 `Executor.move` 内校验实际到位姿态，不通过就返回失败，不会"假装到了"；
     - 只有 IK / 路径类失败允许一次分段重试，其余失败直接反馈给模型重新决策；
     - 一旦判定 epblocked，本回合不再发送任何指令（包括释放与复位）；
     - `grasp_builder / placement_builder / verify` 可注入，便于无仿真单元测试。
@@ -103,7 +86,18 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
     keys = spec.keys
     scene = tools.scene
     placed = dict.fromkeys(keys, False)
-    report = {"status": "running", "placed": placed, "object": None, "stage": "start", "events": []}
+    backend = getattr(tools, "backend", None)
+    report = {
+        "status": "running",
+        "placed": placed,
+        "object": None,
+        "stage": "start",
+        "events": [],
+        # 评测用：记录本轮用的是哪个后端 / 哪个模型，便于事后对比
+        "backend": getattr(backend, "name", "unknown"),
+        "model": getattr(backend, "model", ""),
+        "task": spec.name,
+    }
 
     def record(stage, result=None, **detail):
         report["stage"] = stage
@@ -712,12 +706,12 @@ def run_agentic_episode(args, backend) -> bool:
         bridge = OrcaStudioBridge(GrpcServiceStub(channel))
         source = loop.run_until_complete(asyncio.wait_for(bridge.load_model_xml(), 30))
         if getattr(args, "arm_only", True):
-            from examples.euler.medication_sorting import arm_only_model
+            from examples.euler.medication_sorting import model_trim
 
             prepared = prepare_model(source, out / "prepared.xml")
-            ao = arm_only_model.build(prepared)
+            ao = model_trim.build(prepared)
             scene_xml = str(ao.out_path)
-            env = arm_only_model.make_arm_only_env(ao, args.endpoint)
+            env = model_trim.make_arm_only_env(ao, args.endpoint)
             original_render = bridge.render
 
             def render_padded(qpos, *a, **kw):

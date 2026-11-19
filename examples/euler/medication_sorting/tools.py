@@ -1,14 +1,13 @@
-"""细粒度工具集：让 agent 逐步控制机械臂（RobotUse 风格）。
+"""细粒度工具集：agent 用这些动作逐步控制机械臂。
 
-与旧的「一个大 grasp 包办一切」不同，这里每个工具是一个**小步、可逆**的动作，
-agent 逐步调用，并决定：
-  - 要运动到哪个坐标（move_to）
-  - 现在手在哪、关节什么状态（where）
-  - 到了没有（judge）
-  - 要不要微调（micro_adjust）
-  - 什么时候闭合/释放（grasp / release）
+每个工具只做一小步、且返回 `SkillResult`，由 agent 决定下一步调哪个：
+  - 看画面、指物体（observe / point / judge）
+  - 移动（move_to / step_move_to / micro_adjust）
+  - 夹爪开合（grasp / release / grasp_preset）
+  - 决策（decide_grasp_action / decide_place_action / plan_placement）
 
-坐标由「视觉判断 + 机械臂状态」共同决定，几何计算（IK/轨迹）仍由后端完成。
+坐标怎么来：模型只报像素，`grounding` 用单应矩阵换成桌面坐标；
+运动求解（IK / 轨迹）交给 `planning`，本模块只负责"调什么、传什么参数"。
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from examples.euler.medication_sorting.failures import SkillResult, classify
 
 
 class ArmTools:
-    """机械臂细粒度工具。内部复用 Trial 的运动/夹爪原语，只暴露语义化接口。"""
+    """机械臂细粒度工具。内部复用 `Executor` 的运动/夹爪原语，只暴露语义化接口。"""
 
     def __init__(self, trial, scene, env, bridge, loop, grabber, grounder, backend):
         self.trial = trial
