@@ -13,7 +13,7 @@
 验证 API（行走控制层，公共 API）:
     - env.data.qpos / env.data.qvel（基座状态读取）
     - env.query_joint_qpos / env.query_joint_qvel（关节状态读取）
-    - env.get_body_xpos_xmat_xquat（基座位姿读取，稳定性判定）
+    - env.query_body_xpos_xmat_xquat（基座位姿读取，稳定性判定）
     - env.do_simulation（步进物理）
 
 用法:

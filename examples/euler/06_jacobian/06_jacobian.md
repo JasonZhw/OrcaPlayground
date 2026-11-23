@@ -157,7 +157,7 @@ python examples/euler/06_jacobian/jacobian_ik.py --addr 192.168.1.100:50051
 | `query_site_xvalp_xvalr(names)` | site 速度查询 | xvalp == jacp @ qvel |
 | `set_joint_qpos(qpos)` | 广义坐标写入（W1） | IK 迭代修改关节角 |
 | `mj_forward()` | 前向计算（更新派生量） | IK 迭代后刷新 xpos |
-| `get_body_xpos_xmat_xquat(names)` | Body 位姿查询 | 脚部初始/最终位置 |
+| `query_body_xpos_xmat_xquat(names)` | Body 位姿查询 | 脚部初始/最终位置 |
 | `jnt_qposadr(name)` / `jnt_dofadr(name)` | 关节地址查询 | 定位 G1 关节 qpos/dof 段 |
 
 ---

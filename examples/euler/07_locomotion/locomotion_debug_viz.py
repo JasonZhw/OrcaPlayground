@@ -183,7 +183,7 @@ class LocomotionDebugVisualizer:
         lin_vel_lat = float(self.loco.lin_vel_command[0, 1])
         ang_vel = float(self.loco.ang_vel_command[0, 0])
 
-        body_data = env.get_body_xpos_xmat_xquat([self._head, self._pelvis])
+        body_data = env.query_body_xpos_xmat_xquat([self._head, self._pelvis])
         head_pos = body_data[self._head]["xpos"]
         pelvis_xmat = body_data[self._pelvis]["xmat"]  # (3,3) 行优先
         anchor = head_pos + np.array([0.0, 0.0, self.HEAD_OFFSET_Z])
@@ -251,7 +251,7 @@ class LocomotionDebugVisualizer:
         线性力在后 3 个分量 (cfrc[3:6] = fx, fy, fz)。
         """
         cfrc = env.get_cfrc_ext()  # (nbody, 6), 布局 [torque(3), force(3)]
-        foot_data = env.get_body_xpos_xmat_xquat(self._feet)
+        foot_data = env.query_body_xpos_xmat_xquat(self._feet)
 
         instances = []
         for name in self._feet:

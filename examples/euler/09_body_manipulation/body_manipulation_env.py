@@ -15,7 +15,7 @@
     - equality_find_slot_by_body / equality_constraint：定位槽位 + 保存快照
     - equality_update：写入/恢复约束（绑定/释放均走此原语）
     - set_mocap_pos_and_quat：对齐 mocap 位姿 + 周期性驱动 mocap body
-    - get_body_xpos_xmat_xquat：读取位姿
+    - query_body_xpos_xmat_xquat：读取位姿
 
 > **前置依赖**：本课依赖 Lesson 7 行走控制已验证（复用 ``g1_locomotion.py`` 驱动行走）。
 > G1 模型 ``g1_29dof_camera.xml`` 已内置 mocap body ``TestMocapAnchor``。
@@ -246,7 +246,7 @@ class BodyManipulationEnv(G1BaseEnv):
         self._bound_slot = slot
         # 3. 对齐 mocap 位姿到 pelvis 当前位姿（避免下一帧拉扯）
         mocap_id = self.model.body_name2id(mocap_name)
-        pelvis_pose = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+        pelvis_pose = self.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
         self.set_mocap_pos_and_quat({
             mocap_name: {
                 "pos": pelvis_pose["xpos"],
@@ -310,7 +310,7 @@ class BodyManipulationEnv(G1BaseEnv):
 
         if bound:
             # 记录起始位姿（用于周期性移动插值与位移校验）
-            start_pose = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+            start_pose = self.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
             start_pos = start_pose["xpos"].copy()
             # 程序化绑定 pelvis（weld）：消费者自管编排，使用公共原语
             # （仿照 _anchor_actor 编排模式，不走已删除的 equality_bind_mocap）
@@ -354,7 +354,7 @@ class BodyManipulationEnv(G1BaseEnv):
 
         if bound:
             # 阶段结束：验证位移是否到位
-            end_pose = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+            end_pose = self.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
             end_pos = end_pose["xpos"]
             actual_delta = end_pos - start_pos
             verifier.check_allclose(
@@ -370,7 +370,7 @@ class BodyManipulationEnv(G1BaseEnv):
         self._check_count += 1
         agent = self.agent_name
         pelvis_name = f"{agent}_pelvis"
-        pelvis = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+        pelvis = self.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
         verifier.check(
             f"pelvis_pose_finite_{self._check_count}",
             bool(np.all(np.isfinite(pelvis["xpos"]))),

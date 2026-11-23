@@ -173,14 +173,14 @@ class JacobianEnv(G1BaseEnv):
 
         # === 阶段 2：IK 抬左脚 ===
         # 重新读取脚部初始位置（预设姿态后脚位已变）
-        foot_pos = self.get_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
+        foot_pos = self.query_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
         target = foot_pos + _IK_TARGET_OFFSET
 
         jacr = np.zeros((3, self.model.nv))
         for _ in range(_IK_ITERS):
             jacp_foot = np.zeros((3, self.model.nv))
             self.mj_jacBody(jacp_foot, jacr, body_name=foot_body)
-            cur = self.get_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
+            cur = self.query_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
             delta = target - cur
             jac_leg = jacp_foot[:, g1_joint_cols]
             # 阻尼最小二乘：dq = J^T (J J^T + λ²I)^-1 delta
@@ -194,7 +194,7 @@ class JacobianEnv(G1BaseEnv):
             self.set_joint_qpos(qpos)
             self.mj_forward()
 
-        final = self.get_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
+        final = self.query_body_xpos_xmat_xquat([foot_body])[foot_body]["xpos"]
         verifier.check_allclose(
             "ik_foot_target",
             final,

@@ -206,15 +206,13 @@ def test_demo_entry_rejects_removed_browser_options(monkeypatch, option):
     assert exc.value.code == 2
 
 
-@pytest.mark.parametrize("owns_capture", [False, True])
 @pytest.mark.parametrize("receiver_fails", [False, True])
-def test_camera_cleanup_without_browser_preserves_capture_ownership(
-    camera_logging_env, monkeypatch, owns_capture, receiver_fails,
+def test_camera_cleanup_without_browser_never_touches_engine_capture(
+    camera_logging_env, monkeypatch, receiver_fails,
 ):
     from envs.euler.g1_vision_nav.g1_pick_locomotion_env import G1PickLocomotionEnv
 
     env, _, stream, _ = camera_logging_env
-    env._owns_capture = owns_capture
     events = []
 
     def stop_receiver():
@@ -230,7 +228,7 @@ def test_camera_cleanup_without_browser_preserves_capture_ownership(
             env.close()
     else:
         env.close()
-    assert events == (["receiver", "capture", "environment"] if owns_capture else ["receiver", "environment"])
+    assert events == ["receiver", "environment"]
 
 
 def test_camera_photo_still_saved_without_browser(camera_logging_env, tmp_path):

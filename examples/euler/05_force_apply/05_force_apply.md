@@ -21,7 +21,7 @@
 
 | # | 验证点 | API | 期望 |
 |---|--------|-----|------|
-| 3 | 施力后 pelvis 上升 | `apply_body_force` + `get_body_xpos_xmat_xquat` | z_after > z_before + 0.01m |
+| 3 | 施力后 pelvis 上升 | `apply_body_force` + `query_body_xpos_xmat_xquat` | z_after > z_before + 0.01m |
 | 4 | xfrc 记录力值 | `data.xfrc_applied`（DataView 只读视图） | non-zero |
 | 5 | 清力后 xfrc 归零 | `clear_body_force` | zeros |
 
@@ -38,7 +38,7 @@
 |---|--------|-----|------|
 | 8 | mocap 位置回读一致 | `set_mocap_pos_and_quat` + `data.mocap_pos` | atol=1e-6 |
 | 9 | mocap 四元数回读一致 | `set_mocap_pos_and_quat` + `data.mocap_quat` | atol=1e-6 |
-| 10 | weld 驱动 box 跟随 | `set_mocap_pos_and_quat` + `get_body_xpos_xmat_xquat` | box 到达 [0.7, 0, 0.5]，atol=0.05 |
+| 10 | weld 驱动 box 跟随 | `set_mocap_pos_and_quat` + `query_body_xpos_xmat_xquat` | box 到达 [0.7, 0, 0.5]，atol=0.05 |
 
 > **施力说明**：G1 采用力控 motor 执行器，`ctrl=0` 时关节无力矩，零控下机器人会瘫倒。
 > 本课在 step 10 对 pelvis 施加 500N 向上力（> G1 整机重量 ~343N），克服下落动量使
@@ -169,7 +169,7 @@ python examples/euler/05_force_apply/force_apply.py --addr 192.168.1.100:50051
 | `query_contact_simple()` | 查询接触列表 | 站立触地 |
 | `query_contact_force(ids)` | 查询接触力 | 法向力 > 50N |
 | `set_mocap_pos_and_quat(dict)` | 设置 mocap 位姿 | 回读一致 + box 跟随 |
-| `get_body_xpos_xmat_xquat(names)` | Body 位姿查询 | pelvis z / box xpos |
+| `query_body_xpos_xmat_xquat(names)` | Body 位姿查询 | pelvis z / box xpos |
 | `data.xfrc_applied` | 外力只读视图 | 力值记录/清零 |
 | `data.mocap_pos` / `data.mocap_quat` | mocap 位姿只读视图 | 写入回读一致 |
 

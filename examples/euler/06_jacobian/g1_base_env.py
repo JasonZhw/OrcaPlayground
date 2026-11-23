@@ -189,7 +189,7 @@ class G1BaseEnv(OrcaGymEulerEnv):
         - verify_final(verifier): 结束最终判定
 
     使用契约:
-        读取状态: env.data / env.query_* / env.get_body_xpos_xmat_xquat
+        读取状态: env.data / env.query_* / env.query_body_xpos_xmat_xquat
         写入状态: env.set_joint_qpos / env.apply_body_force / env.set_mocap_pos_and_quat
         仿真步进: env.step(action)  # run_lesson 内部调用，含 PD 闭环（架构 §6.4 S6）
     """
@@ -486,7 +486,7 @@ class G1BaseEnv(OrcaGymEulerEnv):
         包含 G1 基础状态：pelvis 位姿、关节 qpos/qvel。RL 子类可重写为 Box 观测。
         """
         agent = self.agent_name
-        pelvis = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])[f"{agent}_pelvis"]
+        pelvis = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])[f"{agent}_pelvis"]
         joint_names = [f"{agent}_{s}" for s in G1_ROT_JOINT_SUFFIXES]
         return {
             "pelvis_xpos": np.asarray(pelvis["xpos"], dtype=np.float64),

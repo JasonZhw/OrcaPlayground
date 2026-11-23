@@ -184,7 +184,7 @@ def test_environment_pose_to_navigation_arrival_and_drift(monkeypatch) -> None:
         def data(self):
             return SimpleNamespace(time=3.0)
 
-        def get_body_xpos_xmat_xquat(self, names):
+        def query_body_xpos_xmat_xquat(self, names):
             yaw = np.deg2rad(self.yaw_deg)
             c, s = np.cos(yaw), np.sin(yaw)
             return {names[0]: {"xpos": [*self.xy, 0.75], "xmat": [[c, -s, 0], [s, c, 0], [0, 0, 1]]}}

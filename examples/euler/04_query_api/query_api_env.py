@@ -2,7 +2,7 @@
 
 验证 G1 全套状态查询 API 在线运行正确，覆盖：
 - 关节状态查询：query_joint_qpos / query_joint_qvel / query_joint_qacc
-- Body 位姿查询：get_body_xpos_xmat_xquat
+- Body 位姿查询：query_body_xpos_xmat_xquat
 - 传感器查询：query_sensor_data
 - 执行器力矩查询：query_actuator_torques
 - 接触查询：query_contact_simple
@@ -16,7 +16,7 @@
 
 架构合规：
 - 继承 G1BaseEnv，仅重写 verify_step / observe_step 钩子
-- 状态访问全部通过 env.data / env.query_* / env.get_body_xpos_xmat_xquat 公共 API
+- 状态访问全部通过 env.data / env.query_* / env.query_body_xpos_xmat_xquat 公共 API
 - 不触 _gym / _stub / _channel 等私有属性
 - 参见 docs/design/development/orca_gym_euler_phase4_online_validation_development.md §4.3.1
 """
@@ -86,11 +86,11 @@ class QueryApiEnv(G1BaseEnv):
         )
 
         # 3. pelvis 初始高度（keyframe 站立姿态，记录供瘫倒验证比较）
-        pelvis = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])
+        pelvis = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])
         pelvis_z = float(pelvis[f"{agent}_pelvis"]["xpos"][2])
         self._initial_pelvis_z = pelvis_z
         # 同时记录 torso 初始高度，供瘫倒验证比较
-        torso_init = self.get_body_xpos_xmat_xquat([f"{agent}_torso_link"])
+        torso_init = self.query_body_xpos_xmat_xquat([f"{agent}_torso_link"])
         self._initial_torso_z = float(torso_init[f"{agent}_torso_link"]["xpos"][2])
         verifier.check_range(
             "pelvis_initial_height",
@@ -174,7 +174,7 @@ class QueryApiEnv(G1BaseEnv):
         瘫倒在地。验证 pelvis 高度较初始显著下降（drop > 0.1m），
         且 torso 高度也同步下降。
         """
-        pelvis = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])
+        pelvis = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])
         current_pelvis_z = float(pelvis[f"{agent}_pelvis"]["xpos"][2])
         initial_z = getattr(self, "_initial_pelvis_z", current_pelvis_z)
         drop = initial_z - current_pelvis_z
@@ -188,7 +188,7 @@ class QueryApiEnv(G1BaseEnv):
         )
 
         # torso 高度也应下降（躯干随骨盆一起下落）
-        torso = self.get_body_xpos_xmat_xquat([f"{agent}_torso_link"])
+        torso = self.query_body_xpos_xmat_xquat([f"{agent}_torso_link"])
         current_torso_z = float(torso[f"{agent}_torso_link"]["xpos"][2])
         initial_torso_z = getattr(self, "_initial_torso_z", current_torso_z)
         torso_drop = initial_torso_z - current_torso_z

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 import time
 from pathlib import Path
 
@@ -35,8 +34,6 @@ class G1CameraStreamEnv(G1PickLocomotionEnv):
         self._latest_frame: CameraFrame | None = None
         self._camera_wait_started = 0.0
         self._last_camera_wait_log_step: int | None = None
-        self._owns_capture = False
-        self._capture_dir: str | None = None
         super().__init__(*args, **kwargs)
 
     @property
@@ -46,7 +43,7 @@ class G1CameraStreamEnv(G1PickLocomotionEnv):
 
     def before_loop(self, verifier) -> None:
         # 必须先推进仿真/render，再异步等首帧；这里阻塞等图可能导致永远不出帧。
-        # UI 负责相机配置；全局采集是另一个开关，不能随 AddActor 一起删除。
+        # 相机开关与推流端口由 UI 配置；引擎侧录制/帧号 RPC 已废弃，图像只走 WebSocket 流。
         self.locomotion.set_commands(stand=0, lin_vel=(0.0, 0.0), ang_vel=0.0)
         self._first_frame_index = -1
         self._latest_frame = None
@@ -54,28 +51,9 @@ class G1CameraStreamEnv(G1PickLocomotionEnv):
         self._last_camera_wait_log_step = None
         self._camera_streams = G1CameraStreams(self.camera_config)
         self._camera_streams.start()
-        self._start_capture(verifier)
         verifier.observe(
             "camera_stream_connecting",
             f"[相机] 连接端口 {self.camera_config.rgb_port}，等待图像；暂时保持站立。",
-        )
-
-    def _start_capture(self, verifier) -> None:
-        """启动全局采集，但不注册 Actor、不覆盖 UI 参数、不抢占已有录制。"""
-        frame = self.get_current_frame()
-        if frame >= 0:
-            verifier.observe("camera_capture_reused", "[相机] 复用已有采集，退出时保持开启。")
-            return
-        # 独立目录避免覆盖旧录像。先记录所有权，使 RPC 超时后的退出也会尝试清理。
-        self._capture_dir = tempfile.mkdtemp(prefix="g1-green-table-video-")
-        self._owns_capture = True
-        self.begin_save_video(self._capture_dir, capture_mode=0)
-        frame = self.get_current_frame()
-        if frame < 0:
-            raise RuntimeError("全局相机采集未启动（frame=-1）；请检查 OrcaLab 采集日志")
-        verifier.observe(
-            "camera_capture_started",
-            f"[相机] 采集已启动；录像目录：{self._capture_dir}",
         )
 
     def verify_step(self, step: int, verifier) -> None:
@@ -139,18 +117,13 @@ class G1CameraStreamEnv(G1PickLocomotionEnv):
         verifier.observe("rgb_sample_ready", f"[相机] 照片已保存：{self.sample_path}")
 
     def close(self) -> None:
-        # 任一清理步骤失败也要继续；只停止自己启动的全局采集，不改 UI 开关。
+        # 接收线程停止失败也要继续关闭环境；不改 UI 相机开关。
         try:
             if self._camera_streams is not None:
                 self._camera_streams.stop()
                 self._camera_streams = None
         finally:
-            try:
-                if self._owns_capture:
-                    self.stop_save_video()
-                    self._owns_capture = False
-            finally:
-                super().close()
+            super().close()
 
     def _check_frame(self, frame: CameraFrame, verifier, label: str) -> None:
         image = frame.image
