@@ -15,7 +15,7 @@
 
 | # | 验证点 | API / 方法 | 期望 |
 |---|--------|-----------|------|
-| 1 | 基座高度稳定 | `get_body_xpos_xmat_xquat`（pelvis.z） | 0.6-0.9m |
+| 1 | 基座高度稳定 | `query_body_xpos_xmat_xquat`（pelvis.z） | 0.6-0.9m |
 | 2 | 未摔倒 | pelvis 旋转矩阵 → pitch/roll | < 0.8 rad（约 45°） |
 | 3 | 力矩触限比例 | `compute_ctrl` 累计统计 | < 50% |
 | 4 | 起步站立 | 前 50 步基座高度 | > 0.6m |

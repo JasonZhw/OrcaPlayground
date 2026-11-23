@@ -6,7 +6,7 @@
 
 验证 API:
     - query_joint_qpos / query_joint_qvel / query_joint_qacc（关节状态）
-    - get_body_xpos_xmat_xquat（Body 位姿）
+    - query_body_xpos_xmat_xquat（Body 位姿）
     - query_site_pos_and_mat（Site 查询）
     - query_sensor_data（传感器查询）
     - query_actuator_torques（执行器力矩）

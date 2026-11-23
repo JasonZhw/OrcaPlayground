@@ -19,7 +19,7 @@
 - 继承 G1BaseEnv，仅重写 verify_step / observe_step 钩子
 - 状态访问全部通过 env.data / env.apply_body_force / env.clear_body_force /
   env.clear_all_forces / env.set_geom_friction / env.query_contact_simple /
-  env.query_contact_force / env.set_mocap_pos_and_quat / env.get_body_xpos_xmat_xquat
+  env.query_contact_force / env.set_mocap_pos_and_quat / env.query_body_xpos_xmat_xquat
   公共 API
 - 不触 _gym / _stub / _channel 等私有属性
 - 参见 docs/design/development/orca_gym_euler_phase4_online_validation_development.md §4.3.2
@@ -108,7 +108,7 @@ class ForceApplyEnv(G1BaseEnv):
         self, step: int, verifier: OnlineVerifier, agent: str
     ) -> None:
         """step 10：记录 pelvis z，对 pelvis 施加向上力。"""
-        pelvis = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])
+        pelvis = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])
         self._z_before = float(pelvis[f"{agent}_pelvis"]["xpos"][2])
         self.apply_body_force(
             f"{agent}_{_LIFT_BODY}",
@@ -122,7 +122,7 @@ class ForceApplyEnv(G1BaseEnv):
         self, step: int, verifier: OnlineVerifier, agent: str
     ) -> None:
         """step 30：pelvis z 上升、xfrc 记录力值，随后 clear_body_force。"""
-        pelvis = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])
+        pelvis = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])
         z_after = float(pelvis[f"{agent}_pelvis"]["xpos"][2])
         z_before = getattr(self, "_z_before", z_after)
         verifier.check(
@@ -241,7 +241,7 @@ class ForceApplyEnv(G1BaseEnv):
     ) -> None:
         """step 90：weld 约束驱动 manipulation_box 跟随 mocap 目标位置。"""
         box_name = getattr(self, "_mocap_box_name", f"{agent}_manipulation_box")
-        box = self.get_body_xpos_xmat_xquat([box_name])
+        box = self.query_body_xpos_xmat_xquat([box_name])
         box_pos = box[box_name]["xpos"]
         verifier.check_allclose(
             "mocap_drives_box_via_weld",

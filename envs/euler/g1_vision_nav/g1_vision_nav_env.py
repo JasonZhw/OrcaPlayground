@@ -447,7 +447,7 @@ class G1VisionNavEnv(G1CameraStreamEnv):
 
     def _read_planar_state(self) -> dict[str, np.ndarray | float]:
         pelvis_name = f"{self.agent_name}_pelvis"
-        pelvis = self.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+        pelvis = self.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
         position = np.asarray(pelvis["xpos"], dtype=np.float64)
         xmat = np.asarray(pelvis["xmat"], dtype=np.float64).reshape(3, 3)
         goal_robot = world_goal_in_body_frame(

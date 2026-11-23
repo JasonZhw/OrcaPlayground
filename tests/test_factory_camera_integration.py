@@ -255,22 +255,20 @@ def test_both_camera_receivers_stop_even_if_rgb_stop_fails():
     streams._depth_camera.stop.assert_called_once()
 
 
-@pytest.mark.parametrize("active", [True, False])
-def test_capture_ownership_does_not_override_ui(monkeypatch, tmp_path, active):
+def test_camera_lifecycle_never_touches_ui_or_engine_capture(monkeypatch):
     env = object.__new__(G1CameraStreamEnv)
-    env._owns_capture = False
-    env.get_current_frame = Mock(side_effect=[12] if active else [-1, 0])
-    env.begin_save_video = Mock()
-    env.stop_save_video = Mock()
+    env.camera_config = CameraConfig()
+    env.locomotion = Mock()
+    env.begin_save_video = Mock(side_effect=AssertionError("deprecated capture RPC"))
+    env.stop_save_video = Mock(side_effect=AssertionError("deprecated capture RPC"))
     env.set_camera_sensor_info = Mock(side_effect=AssertionError("must not configure UI"))
-    env._camera_streams = Mock()
     env._camera_preview = Mock()
-    monkeypatch.setattr("envs.euler.g1_vision_nav.g1_camera_stream_env.tempfile.mkdtemp", lambda **kw: str(tmp_path))
+    monkeypatch.setattr("envs.euler.g1_vision_nav.g1_camera_stream_env.G1CameraStreams", Mock())
     monkeypatch.setattr(G1PickLocomotionEnv, "close", lambda self: None)
-    env._start_capture(Mock())
-    assert env.begin_save_video.call_count == int(not active)
+    env.before_loop(Mock())
     env.close()
-    assert env.stop_save_video.call_count == int(not active)
+    env.begin_save_video.assert_not_called()
+    env.stop_save_video.assert_not_called()
     env.set_camera_sensor_info.assert_not_called()
 
 
@@ -310,7 +308,7 @@ def test_real_http_preview_serves_jpeg_without_opening_browser(monkeypatch):
 
 
 @pytest.mark.parametrize("fail_receiver", [False, True])
-def test_cleanup_always_closes_capture_and_parent(monkeypatch, fail_receiver):
+def test_cleanup_always_closes_receiver_and_parent(monkeypatch, fail_receiver):
     env = object.__new__(G1CameraStreamEnv)
     events = []
     def stop_receiver():
@@ -319,15 +317,13 @@ def test_cleanup_always_closes_capture_and_parent(monkeypatch, fail_receiver):
             raise RuntimeError("receiver stop")
     env._camera_preview = Mock()
     env._camera_streams = Mock(stop=stop_receiver)
-    env._owns_capture = True
-    env.stop_save_video = lambda: events.append("capture")
     monkeypatch.setattr(G1PickLocomotionEnv, "close", lambda self: events.append("parent"))
     if fail_receiver:
         with pytest.raises(RuntimeError, match="receiver stop"):
             env.close()
     else:
         env.close()
-    assert events == ["receiver", "capture", "parent"]
+    assert events == ["receiver", "parent"]
     env._camera_preview.close.assert_called_once()
 
 

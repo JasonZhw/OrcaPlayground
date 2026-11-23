@@ -7,7 +7,7 @@
 验证 API（行走控制层，公共 API）:
     - env.data.qpos / env.data.qvel（基座状态读取）
     - env.query_joint_qpos / env.query_joint_qvel（关节状态读取）
-    - env.get_body_xpos_xmat_xquat（基座位姿读取，稳定性判定）
+    - env.query_body_xpos_xmat_xquat（基座位姿读取，稳定性判定）
     - env.step（步进物理，架构 §6.4 S5/S6：内部含 PD 闭环）
 
 验证点（5 项数值判定 + 2 项人工观察）:
@@ -139,7 +139,7 @@ class LocomotionEnv(G1BaseEnv):
 
         # 读取基座状态（pelvis 位姿）
         agent = self.agent_name
-        pelvis_data = self.get_body_xpos_xmat_xquat([f"{agent}_pelvis"])[
+        pelvis_data = self.query_body_xpos_xmat_xquat([f"{agent}_pelvis"])[
             f"{agent}_pelvis"
         ]
         pelvis_xpos = pelvis_data["xpos"]  # (3,)

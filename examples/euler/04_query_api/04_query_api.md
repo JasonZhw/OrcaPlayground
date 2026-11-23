@@ -16,7 +16,7 @@
 |---|--------|-----|------|
 | 1 | 关节 qpos 维度 | `query_joint_qpos` | 29 个 hinge joint |
 | 2 | qpos 与 data 一致 | `query_joint_qpos` vs `data.qpos`（按关节地址切片） | atol=1e-9 |
-| 3 | pelvis 初始高度 | `get_body_xpos_xmat_xquat` | z ∈ [0.70, 0.95] |
+| 3 | pelvis 初始高度 | `query_body_xpos_xmat_xquat` | z ∈ [0.70, 0.95] |
 | 4 | IMU 四元数维度 | `query_sensor_data` | 4 维 |
 | 5 | torso 子树质量 | `body_subtree_mass` | > 0 |
 | 6 | torso 相对 pelvis 位置 | `query_position_body_B` | z ∈ [0.0, 0.2] |
@@ -28,8 +28,8 @@
 
 | # | 验证点 | API | 期望 |
 |---|--------|-----|------|
-| 10 | pelvis 高度下降 | `get_body_xpos_xmat_xquat` | drop > 0.1m（较初始） |
-| 11 | torso 高度下降 | `get_body_xpos_xmat_xquat` | drop > 0.05m（较初始） |
+| 10 | pelvis 高度下降 | `query_body_xpos_xmat_xquat` | drop > 0.1m（较初始） |
+| 11 | torso 高度下降 | `query_body_xpos_xmat_xquat` | drop > 0.05m（较初始） |
 
 > **瘫倒原因**：G1 采用力控 motor 执行器，`ctrl=0` 时关节无力矩输出，重力作用下
 > 机器人瘫倒。step 0 验证初始直立姿态（keyframe），step 50 验证瘫倒行为
@@ -164,7 +164,7 @@ python examples/euler/04_query_api/query_api.py --addr 192.168.1.100:50051
 |-----|------|--------|
 | `query_joint_qpos(names)` | 关节位置查询 | 维度 + 与 data.qpos 一致性 |
 | `query_joint_qvel(names)` | 关节速度查询 | _get_obs 中调用 |
-| `get_body_xpos_xmat_xquat(names)` | Body 位姿查询 | pelvis 高度 |
+| `query_body_xpos_xmat_xquat(names)` | Body 位姿查询 | pelvis 高度 |
 | `query_sensor_data(names)` | 传感器数据查询 | imu_quat 维度 |
 | `query_actuator_torques(names)` | 执行器力矩查询 | motor 数量 |
 | `query_contact_simple()` | 接触查询 | 站立触地 |

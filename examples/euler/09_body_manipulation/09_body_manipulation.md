@@ -18,7 +18,7 @@
 | `equality_constraint(slot)` | 读取槽位完整数据快照 | 保存原始约束供释放恢复 |
 | `equality_update(slot, ...)` | 写入/恢复约束（绑定/释放均走此原语） | 绑定 weld + 释放恢复原始 |
 | `set_mocap_pos_and_quat(dict)` | 设置 mocap body 位姿 | 对齐 mocap + 3 秒内周期性移动 |
-| `get_body_xpos_xmat_xquat(names)` | 读取 body 位姿 | 暂停前检查 + 位移验证 |
+| `query_body_xpos_xmat_xquat(names)` | 读取 body 位姿 | 暂停前检查 + 位移验证 |
 
 > **交互式 UI 操作**（Studio/OrcaLab 鼠标拖拽，由 `render()` 内部驱动的 `_do_body_manipulation`）属于基础能力，不在本课展示。
 
@@ -169,7 +169,7 @@ slot = env.equality_find_slot_by_body(mocap_name)
 self._original_eq_snapshot = env.equality_constraint(slot)
 self._bound_slot = slot
 # 3. 对齐 mocap 位姿到 pelvis 当前位姿（避免下一帧拉扯）
-pelvis_pose = env.get_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
+pelvis_pose = env.query_body_xpos_xmat_xquat([pelvis_name])[pelvis_name]
 env.set_mocap_pos_and_quat({mocap_name: {"pos": ..., "quat": ...}})
 # 4. 写入 weld 约束（公共原语，内部 mj_forward）
 env.equality_update(slot, eq_type=mujoco.mjtEq.mjEQ_WELD,

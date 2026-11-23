@@ -8,7 +8,7 @@
     - env.equality_find_slot_by_body / equality_constraint（定位槽位 + 保存快照）
     - env.equality_update（写入/恢复约束，绑定/释放均走此原语）
     - env.set_mocap_pos_and_quat（对齐 mocap 位姿 + 驱动 mocap body）
-    - env.get_body_xpos_xmat_xquat（读取位姿）
+    - env.query_body_xpos_xmat_xquat（读取位姿）
 
 用法:
     # 1. 先启动 OrcaStudio 并加载含 1 个 G1 的关卡（需含 mocap body），点击运行
