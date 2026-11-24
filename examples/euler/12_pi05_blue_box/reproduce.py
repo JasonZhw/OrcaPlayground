@@ -10,15 +10,17 @@ ROOT = Path(__file__).resolve().parent
 
 
 def run(script, *arguments):
-    subprocess.run([sys.executable, str(ROOT / script), *map(str, arguments)],
-                   cwd=ROOT, check=True)
+    result = subprocess.run([sys.executable, str(ROOT / script), *map(str, arguments)],
+                            cwd=ROOT, check=False)
+    if result.returncode:
+        raise SystemExit(result.returncode)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", choices=(
         "check", "download", "prepare-scene", "collect", "convert",
-        "prepare-train", "train", "infer", "evaluate", "studio",
+        "prepare-train", "train", "infer", "evaluate", "studio", "check-scene", "audit",
     ))
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -33,6 +35,8 @@ def main():
         "infer": "scripts/infer.py",
         "evaluate": "simulation/evaluate.py",
         "studio": "scripts/start_studio.py",
+        "check-scene": "simulation/check_scene.py",
+        "audit": "scripts/audit_evaluation.py",
     }
     run(entries[args.stage], *args.arguments)
 

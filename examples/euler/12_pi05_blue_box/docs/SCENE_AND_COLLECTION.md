@@ -16,6 +16,11 @@
 再加载布局。布局中保留了原逻辑资源标识和相机挂载。
 访问受资源服务权限与可用性约束；本项目没有内置平台账号或授权凭据。
 现有布局未记录可视包的不可变内容哈希，因此资源更新可能影响画面。
+`configs/visual_resources.json` 提供资源清单，未知内容哈希明确为 `null`。
+资源同步后运行 `python reproduce.py check-scene --output outputs/scene-check`，
+导出双相机初始 PNG 和场景检查 JSON，再人工对照原始采集画面。
+该命令会复位当前场景，必须在空闲实例执行；
+它不证明视觉包的内容与历史版本相同。
 
 全部资源就绪后，`python reproduce.py studio --load` 调用公共
 `load_layout(layout_path=...)` 和 `start_simulation(program_name="external")`。

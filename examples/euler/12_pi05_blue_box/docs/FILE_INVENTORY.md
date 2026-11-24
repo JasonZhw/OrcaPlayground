@@ -5,6 +5,7 @@
 | `reproduce.py` | 统一阶段入口：下载、场景、采集、转换、训练、推理、评测 |
 | `environment.yml`、`requirements*.txt`、`scripts/bootstrap.sh` | orca 环境与依赖安装 |
 | `configs/sources.json` | 数据、模型、tokenizer 固定 revision，模型大小及哈希 |
+| `configs/visual_resources.json` | 四个视觉包的名称与内容版本固定状态；未知哈希保留为空 |
 | `configs/train_config.saved.json` | 原始完整训练配置，保持原文件字节 |
 | `configs/input_files.sha256.json` | 七份原始训练材料的 SHA256 |
 | `assets/scene_v9.json` | OrcaStudio V9 布局及包引用 |
@@ -23,11 +24,14 @@
 | `scripts/infer.py`、`policy_runtime.py` | 单观测动作预测与常驻模型运行时 |
 | `scripts/start_studio.py`、`prepare_scene.py` | 启动/加载可视场景，生成运行时路径 |
 | `scripts/check_environment.py`、`collect_versions.py` | 运行环境、CUDA、资源与版本清单 |
+| `simulation/check_scene.py` | 初始场景复位、同步双相机 PNG、帧有效性和人工审核清单 |
+| `scripts/evaluation_metadata.py`、`audit_evaluation.py` | 评测来源记录、权重/tokenizer/代码哈希与结果证据审计 |
 | `scripts/verify_public.py`、`smoke_physics.py` | 隐私/哈希/便携性检查与离线物理检查 |
 | `reference/training/` | 原转换程序、训练入口、包清单、info.json、stats.json |
 | `third_party/openpi/` | 官方图像函数原文件及许可证 |
 | `third_party/curobo/` | 上游许可证；库本体按固定提交安装 |
 | `tests/` | 配方保护、预处理、处理器覆盖与放置判据测试 |
+| `docs/ACCEPTANCE.md` | 干净安装、闭环对照、证据发布及重新训练的分阶段验收流程 |
 
 不收录原机器连接脚本、个人运行日志、云盘同步清理程序。
 Hugging Face 数据和权重保留在原仓库，由下载脚本获取。

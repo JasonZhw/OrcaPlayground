@@ -7,6 +7,10 @@
 建议首先下载已有权重进行推理，然后复现原始 200 条数据的训练。
 重新采集属于另一条可选流程，不需要为下载权重测试先采集 200 条。
 验证范围与尚未执行的步骤见 [复现状态](docs/REPRODUCTION_STATUS.md)。
+**当前发布状态：流程入口已提供，公开入口的完整闭环验收尚未完成，
+不能承诺下载后达到历史 100% 成功率。**
+新机器安装、初始画面检查、预处理对照与证据发布步骤见
+[公开流程验收](docs/ACCEPTANCE.md)。
 
 ## 资源与版本
 
@@ -44,7 +48,7 @@ git clone --branch feature/pi05-v9-blue-box-200-full-finetune \
 cd OrcaPlayground/examples/euler/12_pi05_blue_box
 bash scripts/bootstrap.sh
 conda activate orca
-python reproduce.py check --simulation --cuda
+python reproduce.py check --profile simulation --strict-versions --cuda
 ```
 
 已有 `orca` 环境时，不要再次运行创建环境的脚本：
@@ -85,9 +89,18 @@ python reproduce.py studio
 
 ```bash
 python reproduce.py studio --load
+python reproduce.py check-scene --output outputs/scene-check
+```
+
+先人工检查 `outputs/scene-check/` 中的头部与右腕画面、物品和木框。
+检查器只验证相机帧有效，不识别物品或证明纹理资源一致。然后运行：
+
+```bash
 python reproduce.py evaluate \
   --checkpoint models/pi05-025000 --tokenizer models/tokenizer \
   --output outputs/eval-pad-10 --trials 10 --image-mode pad
+python reproduce.py audit \
+  --evaluation outputs/eval-pad-10 --output outputs/eval-pad-10-audit.json
 ```
 
 输出为 `summary.json` 和每次试验的 `cameras.mp4`、`trajectory.npz`、
@@ -96,6 +109,9 @@ python reproduce.py evaluate \
 成功要求夹起超过 8cm、整个盒子位于框内、接触框底、主动松爪并脱离夹爪，
 且速度低于 2cm/s 连续稳定 50 个周期。碰撞或关节跳变只会中止测试。
 这是仿真入口，不连接真实机器人。
+另有 `provenance.json` 保存实际权重/tokenizer 哈希、代码版本和环境清单，
+每次试验保留初始双相机 PNG。审计通过只表示记录一致，
+仍须人工审核全部录像；审计报告中的成功率保留失败和中止试验。
 
 历史记录采用直接拉伸图像；对照该预处理时使用新的输出目录：
 

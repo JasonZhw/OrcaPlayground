@@ -10,8 +10,10 @@ import subprocess
 import sys
 
 import numpy as np
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from evaluation_metadata import provenance
 from policy_runtime import PolicyRuntime
 from camera_capture import Cameras
 from environment import DualArmEnv
@@ -73,6 +75,9 @@ def trial(env, cameras, runtime, folder, seed, max_steps, max_joint_jump):
             images = cameras.capture()
             if any(image.std() < 2 for image in images.values()):
                 raise RuntimeError("camera_abort: blank image")
+            if index == 0:
+                for name, image in images.items():
+                    Image.fromarray(image).save(folder / f"initial_{name}.png")
             state = env.data.qpos[env.qids[env.action_ids]].astype(np.float32)
             if index % 50 == 0:
                 chunk, _ = runtime.predict(state, images["head_cam"], images["camera_right"])
@@ -173,6 +178,8 @@ def main():
                     raise RuntimeError(f"Camera port {port} is already in use")
         runtime = PolicyRuntime(args.checkpoint, args.tokenizer, args.image_mode)
         args.output.mkdir(parents=True)
+        save(args.output / "provenance.json",
+             provenance(args.checkpoint.resolve(), args.tokenizer.resolve()))
         save(args.output / "settings.json", {
             "scene_sha256": hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
             "checkpoint_name": args.checkpoint.name, "trials": args.trials,

@@ -1,0 +1,10 @@
+{
+  "content_versions_pinned": false,
+  "verification": "Manual resource synchronization and initial-camera review required.",
+  "packages": [
+    {"name": "SimpleMovement_Screw", "tech_name": "simplemovement_screw", "content_sha256": null},
+    {"name": "unitree_g1_gripper", "tech_name": "g1_pick_with_gripper", "content_sha256": null},
+    {"name": "Kitchenware", "tech_name": "kitchenware", "content_sha256": null},
+    {"name": "Warehouse_EmbodiedCompetition_2026Hangzhou", "tech_name": "warehouse_embodiedcompetition_2026hangzhou", "content_sha256": null}
+  ]
+}
