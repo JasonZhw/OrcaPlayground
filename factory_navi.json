@@ -1,0 +1,1873 @@
+{
+    "version": "4.0",
+    "level": {
+        "name": "simplemovement_conveybelt",
+        "path": "levels/e071469a36d3c8aa/conveybelt/simplemovement_conveybelt/simplemovement_conveybelt.spawnable",
+        "package_reference": {
+            "name": "SimpleMovement_Conveybelt",
+            "tech_name": "simplemovement_conveybelt",
+            "author": "Orca",
+            "project_name": "conveybelt"
+        }
+    },
+    "viewport_camera_transform": {
+        "position": [
+            6.730715751647949,
+            6.208870887756348,
+            5.986953258514404
+        ],
+        "rotation": [
+            0.29817987092044507,
+            -0.10889079642221608,
+            0.32528415980882,
+            -0.8907422603704578
+        ]
+    },
+    "actors": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "type": "GroupActor",
+            "transform": {
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            }
+        },
+        {
+            "name": "industrial_workbench_1",
+            "path": "/industrial_workbench_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    10.359040260314941,
+                    7.752530574798584,
+                    0.0
+                ],
+                "rotation": [
+                    0.7071068109888685,
+                    0.0,
+                    0.0,
+                    -0.7071067513842252
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/table_01/table_01",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.z",
+                                    "value": -89.99999237060547,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "industrial_electrical_control_cabinet_1",
+            "path": "/industrial_electrical_control_cabinet_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    21.5,
+                    4.2753424644470215,
+                    -0.5600000023841858
+                ],
+                "rotation": [
+                    0.7071067513842252,
+                    0.0,
+                    0.0,
+                    -0.7071068109888685
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/inspection_01/industry_workshop_inspection/prop/distributionbox_02/distributionbox_02",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.z",
+                                    "value": -0.5600000023841858,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "industrial_guard_rail_1",
+            "path": "/industrial_guard_rail_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    11.14034366607666,
+                    1.2693822383880615,
+                    -1.1919888355592883e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/barrier/barrier"
+        },
+        {
+            "name": "industrial_guard_rail_2",
+            "path": "/industrial_guard_rail_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    11.207648277282715,
+                    -0.702598512172699,
+                    0.0020002236124128103
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/barrier/barrier"
+        },
+        {
+            "name": "blue_plastic_crate_1",
+            "path": "/blue_plastic_crate_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    13.881271362304688,
+                    1.3526076078414917,
+                    0.8330000042915344
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.8330000042915344,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -1.9073486328125e-06,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.0012406110763549805,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006146728992462158,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 3.476477331787464e-06,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.4034109430127728e-09,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -0.00029945062124170363,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "industrial_plastic_crates_2",
+            "path": "/industrial_plastic_crates_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.864749908447266,
+                    2.4295146465301514,
+                    0.7873674631118774
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_grey/box_grey_01",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Grey_01",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Grey_01",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 0.0052547454833984375,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.001585245132446289,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": -0.026577889919281006,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 0.01182936318218708,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 0.044476158916950226,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -1.1126176118850708,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "industrial_robot_end_effector_gripper_1",
+            "path": "/industrial_robot_end_effector_gripper_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.846023559570312,
+                    1.7358659505844116,
+                    0.8212699890136719
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 2.7590816020965576
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/item_handle/item_handle",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Item_Handle",
+                            "index": 0
+                        },
+                        {
+                            "name": "Item_Handle",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -0.0031328201293945312,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.00011938810348510742,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": -0.0063901543617248535,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -1.0585068464279175,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -7.832772731781006,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 2.1286158561706543,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "purple_plastic_crate_1",
+            "path": "/purple_plastic_crate_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.9706392288208,
+                    6.490418910980225,
+                    0.7993135452270508
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_purple",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Purple",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Purple",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.z",
+                                    "value": -0.009438812732696533,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -1.5523386537097394e-05,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -3.490256518588579e-14,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -1.7234623423496506e-14,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "purple_plastic_crate_2",
+            "path": "/purple_plastic_crate_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    10.433509826660156,
+                    7.729312419891357,
+                    0.9887736439704895
+                ],
+                "rotation": [
+                    0.677920865265903,
+                    0.0,
+                    0.0,
+                    0.7351348858795436
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_purple",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.z",
+                                    "value": 94.6372299194336,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "warning_isolation_barrier_1",
+            "path": "/warning_isolation_barrier_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.789528846740723,
+                    -1.4668747186660767,
+                    1.0281091360892625e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "industrial_metal_shelf_1",
+            "path": "/industrial_metal_shelf_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    13.896446228027344,
+                    -7.9256510734558105,
+                    1.7695775582673415e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/shelf_01/shelf_01"
+        },
+        {
+            "name": "metal_storage_cabinet_2",
+            "path": "/metal_storage_cabinet_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    19.940507888793945,
+                    -6.86998176574707,
+                    1.2278434755187668e-16
+                ],
+                "rotation": [
+                    0.7071068109888685,
+                    0.0,
+                    0.0,
+                    0.7071067513842252
+                ],
+                "scale": 20.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/battery/battery",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.z",
+                                    "value": 89.99999237060547,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "Battery",
+                            "index": 0
+                        },
+                        {
+                            "name": "Battery",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -2.9802322387695312e-08,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.0009212259901687503,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 1.1031391800031543e-08,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 3.7580761613753566e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -1.0245282282994594e-05,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "blue_plastic_crate_2",
+            "path": "/blue_plastic_crate_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    13.885412216186523,
+                    0.460388720035553,
+                    0.8327980041503906
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -1.9073486328125e-06,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.0012405812740325928,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006348729133605957,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 3.5067992030235473e-06,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.4035702600168065e-09,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -0.0002994530077558011,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "blue_plastic_crate_3",
+            "path": "/blue_plastic_crate_3",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    14.017094612121582,
+                    -0.5385269522666931,
+                    0.8327980637550354
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.y",
+                                    "value": -3.5762786865234375e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006348669528961182,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -7.723965040895564e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 1.739425825597607e-10,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -1.9853348476317478e-07,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "blue_plastic_crate_4",
+            "path": "/blue_plastic_crate_4",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    14.13177490234375,
+                    -1.520684003829956,
+                    0.8327979445457458
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.y",
+                                    "value": -4.76837158203125e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006348788738250732,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -7.528444712079363e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.8407675383969035e-10,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 2.108570811287791e-07,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "blue_plastic_crate_5",
+            "path": "/blue_plastic_crate_5",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    14.116116523742676,
+                    -2.469324827194214,
+                    0.8327980041503906
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.y",
+                                    "value": -4.76837158203125e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006348729133605957,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -7.724083843640983e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.739432903269389e-10,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 1.9927780670059292e-07,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "blue_plastic_crate_6",
+            "path": "/blue_plastic_crate_6",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    14.102326393127441,
+                    -3.5159895420074463,
+                    0.8327980041503906
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/box_01/box_blue",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        },
+                        {
+                            "name": "Box_Blue",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.y",
+                                    "value": -4.76837158203125e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.006348729133605957,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -7.528491323682829e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.840773644623539e-10,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 2.1085767798467714e-07,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "mobile_collaborative_robot_1",
+            "path": "/mobile_collaborative_robot_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    12.740239143371582,
+                    -2.2913694381713867,
+                    1.915138979112911e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_mobile_base_usda"
+        },
+        {
+            "name": "office_cubicle_workstation_1",
+            "path": "/office_cubicle_workstation_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    20.787994384765625,
+                    6.264543533325195,
+                    -4.705050969804904e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/office_desk_7_mb_usda"
+        },
+        {
+            "name": "color_layered_file_cabinet_1",
+            "path": "/color_layered_file_cabinet_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    21.734481811523438,
+                    7.096279621124268,
+                    0.7275829315185547
+                ],
+                "rotation": [
+                    0.7147711126554469,
+                    0.009869355063098419,
+                    -0.00965466192036237,
+                    0.6992221677314988
+                ],
+                "scale": 0.7646046876907349
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/height_map_helper_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.y",
+                                    "value": -1.6008254988264525e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 88.73994445800781,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "big_box",
+                            "index": 1
+                        },
+                        {
+                            "name": "big_box",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -0.18207359313964844,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.6857967376708984,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.2240198254585266,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -0.17056052386760712,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 1.5684010982513428,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -9.489416122436523,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "ruler",
+                            "index": 0
+                        },
+                        {
+                            "name": "ruler",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 0.0049610137939453125,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.008880615234375,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.04437154531478882,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -0.055638425052165985,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 1.5023653507232666,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 1.6338518857955933,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "industrial_workbench_5",
+            "path": "/industrial_workbench_5",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    16.8685245513916,
+                    -2.9556198120117188,
+                    1.5464967408802425e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/officesupplies/officesupplies/me_prop_table_green/prefabs/table_green_05"
+        },
+        {
+            "name": "industrial_workbench_6",
+            "path": "/industrial_workbench_6",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    16.87386131286621,
+                    -4.594836235046387,
+                    2.330950496944701e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/officesupplies/officesupplies/me_prop_table_green/prefabs/table_green_05"
+        },
+        {
+            "name": "mobile_collaborative_robot_2",
+            "path": "/mobile_collaborative_robot_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    18.70321273803711,
+                    -4.492424964904785,
+                    -0.07718563079833984
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_mobile_base_usda"
+        },
+        {
+            "name": "electric_screwdriver_1",
+            "path": "/electric_screwdriver_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    16.928936004638672,
+                    -4.256879806518555,
+                    0.7899999022483826
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/simplemovement_screw/simple_case_robot/screwdriver_set/screwdriver",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Screwdriver",
+                            "index": 0
+                        },
+                        {
+                            "name": "Screwdriver",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 0.001239776611328125,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": -0.018798351287841797,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.11070173978805542,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 0.031567856669425964,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": -0.002819288056343794,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": -12.188626289367676,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "electric_screwdriver_2",
+            "path": "/electric_screwdriver_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    16.907550811767578,
+                    -3.2464818954467773,
+                    0.7900000214576721
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/simplemovement_screw/simple_case_robot/screwdriver_set/screwdriver",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "Screwdriver",
+                            "index": 0
+                        },
+                        {
+                            "name": "Screwdriver",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -0.026304244995117188,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.006789445877075195,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.11070162057876587,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": -0.005981291178613901,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 0.02207116223871708,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 166.48477172851562,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "warning_isolation_barrier_3",
+            "path": "/warning_isolation_barrier_3",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    21.895526885986328,
+                    2.717398166656494,
+                    -2.371518610557854e-16
+                ],
+                "rotation": [
+                    0.7071067513842252,
+                    0.0,
+                    0.0,
+                    0.7071068109888685
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "industrial_three_tier_metal_shelf_1",
+            "path": "/industrial_three_tier_metal_shelf_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    19.756025314331055,
+                    -4.687087535858154,
+                    2.6067147784175474e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/trolley_01/trolley_01"
+        },
+        {
+            "name": "industrial_three_tier_metal_shelf_2",
+            "path": "/industrial_three_tier_metal_shelf_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    19.65137481689453,
+                    -3.3028149604797363,
+                    1.7590923491715173e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/trolley_01/trolley_01"
+        },
+        {
+            "name": "industrial_workbench_7",
+            "path": "/industrial_workbench_7",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.940435409545898,
+                    2.1692957878112793,
+                    -3.518177551502542e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/officesupplies/officesupplies/me_prop_table_green/prefabs/table_green_02"
+        },
+        {
+            "name": "industrial_workbench_3",
+            "path": "/industrial_workbench_3",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    11.320301055908203,
+                    2.1384994983673096,
+                    -2.3126447914655556e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/officesupplies/officesupplies/me_prop_table_green/prefabs/table_green_03"
+        },
+        {
+            "name": "industrial_workbench_2",
+            "path": "/industrial_workbench_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.947593688964844,
+                    6.591455459594727,
+                    -3.449945077134268e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/officesupplies/officesupplies/me_prop_table_green/prefabs/table_green_05"
+        },
+        {
+            "name": "industrial_metal_storage_tank_1",
+            "path": "/industrial_metal_storage_tank_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    10.61668872833252,
+                    -5.433043003082275,
+                    -0.17161273956298828
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 5.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/simplemovement_screw/simple_case_robot/diningtableseries/thermoscup",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "ThermosCup",
+                            "index": 0
+                        },
+                        {
+                            "name": "ThermosCup",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.z",
+                                    "value": 0.03457603603601456,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.x",
+                                    "value": 6.155211167424568e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 9.494497135165147e-07,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 1.2276261821334011e-12,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "warning_isolation_barrier_5",
+            "path": "/warning_isolation_barrier_5",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    9.739909172058105,
+                    -5.394564151763916,
+                    0.002000227337703109
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "warning_isolation_barrier_6",
+            "path": "/warning_isolation_barrier_6",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    10.382110595703125,
+                    -4.747493743896484,
+                    2.5311059705676684e-16
+                ],
+                "rotation": [
+                    0.7071067513842252,
+                    0.0,
+                    0.0,
+                    -0.7071068109888685
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "warning_isolation_barrier_4",
+            "path": "/warning_isolation_barrier_4",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    13.203822135925293,
+                    6.188631534576416,
+                    0.05232429504394531
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "warning_isolation_barrier_7",
+            "path": "/warning_isolation_barrier_7",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    13.963903427124023,
+                    6.901735305786133,
+                    -4.694117362642628e-16
+                ],
+                "rotation": [
+                    0.7071067513842252,
+                    0.0,
+                    0.0,
+                    0.7071068109888685
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "warning_isolation_barrier_8",
+            "path": "/warning_isolation_barrier_8",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    14.721057891845703,
+                    6.2513628005981445,
+                    -4.267102642943317e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/autoproductionline_warehouse/autoproductionline_warehouse/prop/railing_01/railing_01"
+        },
+        {
+            "name": "industrial_electrical_control_cabinet_2",
+            "path": "/industrial_electrical_control_cabinet_2",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    21.5,
+                    3.4799509048461914,
+                    -0.5600000023841858
+                ],
+                "rotation": [
+                    0.7071067513842252,
+                    0.0,
+                    0.0,
+                    -0.7071068109888685
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/inspection_01/industry_workshop_inspection/prop/distributionbox_02/distributionbox_02"
+        },
+        {
+            "name": "mobile_collaborative_robot_3",
+            "path": "/mobile_collaborative_robot_3",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    20.508031845092773,
+                    6.313688278198242,
+                    0.0
+                ],
+                "rotation": [
+                    0.9061461217463779,
+                    -0.003428795662888557,
+                    0.0073470879263680695,
+                    0.42288706495151035
+                ],
+                "scale": 0.8999999761581421
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_mobile_base_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.x",
+                                    "value": -0.7121264934539795,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 0.5967512130737305,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 50.039459228515625,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "uniformScale",
+                                    "value": 0.8999999761581421,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "g1",
+            "path": "/g1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    6.860000133514404,
+                    0.08900000154972076,
+                    -2.1823701977355582e-16
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 6.860000133514404,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 0.08900000154972076,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_camera1",
+                            "index": 10
+                        },
+                        {
+                            "name": "head_camera2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_cam",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "package_references": [
+        {
+            "name": "AutoProductionLine_Warehouse",
+            "tech_name": "autoproductionline_warehouse",
+            "author": "Orca",
+            "project_name": "autoproductionline_warehouse"
+        },
+        {
+            "name": "Industry_Workshop_Inspection_01",
+            "tech_name": "industry_workshop_inspection_01",
+            "author": "Orca",
+            "project_name": "inspection_01"
+        },
+        {
+            "name": "新手实例库配套资产",
+            "tech_name": "orcaplaygroundassets",
+            "author": "Orca",
+            "project_name": "default_project"
+        },
+        {
+            "name": "OfficeSupplies",
+            "tech_name": "officesupplies",
+            "author": "Orca",
+            "project_name": "officesupplies"
+        },
+        {
+            "name": "SimpleMovement_Screw",
+            "tech_name": "simplemovement_screw",
+            "author": "Orca",
+            "project_name": "simplemovement_screw"
+        },
+        {
+            "name": "g1_pick",
+            "tech_name": "g1_pick",
+            "author": "admin_test_2",
+            "project_name": "default_project"
+        }
+    ]
+}
