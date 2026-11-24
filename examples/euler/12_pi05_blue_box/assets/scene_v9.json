@@ -1,0 +1,401 @@
+{
+  "version": "4.0",
+  "level": {
+    "name": "simplemovement_screw",
+    "path": "levels/e071469a36d3c8aa/simplemovement_screw/simplemovement_screw/simplemovement_screw.spawnable",
+    "package_reference": {
+      "name": "SimpleMovement_Screw",
+      "tech_name": "simplemovement_screw",
+      "author": "Orca",
+      "project_name": "simplemovement_screw"
+    }
+  },
+  "viewport_camera_transform": {
+    "position": [
+      29.99195671081543,
+      -6.529534339904785,
+      2.30849027633667
+    ],
+    "rotation": [
+      0.08894962704663367,
+      -0.052331651828842966,
+      0.5043721135093167,
+      -0.8572969924006935
+    ]
+  },
+  "actors": [
+    {
+      "name": "Group",
+      "path": "/Group",
+      "type": "GroupActor",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "children": [
+        {
+          "name": "Static_Objcets",
+          "path": "/Group/Static_Objcets",
+          "type": "GroupActor",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": 1.0
+          },
+          "children": [
+            {
+              "name": "Table",
+              "path": "/Group/Static_Objcets/Table",
+              "type": "AssetActor",
+              "transform": {
+                "position": [
+                  30.3,
+                  -6.95,
+                  0.0
+                ],
+                "rotation": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": 0.8511626896543827
+              },
+              "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/table_green_03/table_green_03"
+            }
+          ]
+        },
+        {
+          "name": "Interactive_Objcets",
+          "path": "/Group/Interactive_Objcets",
+          "type": "GroupActor",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "unitree_g1_1",
+      "path": "/unitree_g1_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          30.100000381469727,
+          -6.960000038146973,
+          1.9586584731516528e-16
+        ],
+        "rotation": [
+          0.9999780340242119,
+          0.0,
+          0.0,
+          -0.0066280818546742585
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_with_gripper_usda",
+      "entity_overrides": [
+        {
+          "entity_path": [
+            {
+              "name": "mujoco_wrap",
+              "index": 0
+            },
+            {
+              "name": "rootPrim",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "waist_yaw_link_rev_1_0",
+              "index": 7
+            },
+            {
+              "name": "waist_roll_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "torso_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "right_shoulder_pitch_link",
+              "index": 8
+            },
+            {
+              "name": "right_shoulder_roll_link",
+              "index": 1
+            },
+            {
+              "name": "right_shoulder_yaw_link",
+              "index": 0
+            },
+            {
+              "name": "right_elbow_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_roll_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_pitch_link",
+              "index": 0
+            },
+            {
+              "name": "right_wrist_yaw_link",
+              "index": 2
+            },
+            {
+              "name": "arm_r_end_link",
+              "index": 0
+            },
+            {
+              "name": "camera_right_body1",
+              "index": 2
+            },
+            {
+              "name": "camera_right_body2",
+              "index": 1
+            },
+            {
+              "name": "cameras",
+              "index": 1
+            },
+            {
+              "name": "camera_right",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "NearClipDistance",
+                  "value": 0.009999999776482582,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "entity_path": [
+            {
+              "name": "mujoco_wrap",
+              "index": 0
+            },
+            {
+              "name": "rootPrim",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "pelvis",
+              "index": 0
+            },
+            {
+              "name": "waist_yaw_link_rev_1_0",
+              "index": 7
+            },
+            {
+              "name": "waist_roll_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "torso_link_rev_1_0",
+              "index": 1
+            },
+            {
+              "name": "left_shoulder_pitch_link",
+              "index": 2
+            },
+            {
+              "name": "left_shoulder_roll_link",
+              "index": 1
+            },
+            {
+              "name": "left_shoulder_yaw_link",
+              "index": 0
+            },
+            {
+              "name": "left_elbow_link",
+              "index": 1
+            },
+            {
+              "name": "left_wrist_roll_link",
+              "index": 1
+            },
+            {
+              "name": "left_wrist_pitch_link",
+              "index": 1
+            },
+            {
+              "name": "left_wrist_yaw_link",
+              "index": 0
+            },
+            {
+              "name": "arm_l_end_link",
+              "index": 2
+            },
+            {
+              "name": "camera_left_body1",
+              "index": 2
+            },
+            {
+              "name": "camera_left_body2",
+              "index": 1
+            },
+            {
+              "name": "cameras",
+              "index": 0
+            },
+            {
+              "name": "camera_left",
+              "index": 0
+            }
+          ],
+          "group_overrids": [
+            {
+              "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "NearClipDistance",
+                  "value": 0.009999999776482582,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wooden_pallet_bin_1",
+      "path": "/wooden_pallet_bin_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          30.17387580871582,
+          -6.75,
+          0.6417093873023987
+        ],
+        "rotation": [
+          0.7024046859433056,
+          0.0,
+          0.0,
+          -0.7117778144652208
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/e071469a36d3c8aa/kitchenware/kitchenware/basket_01/basket_01",
+      "entity_overrides": [
+        {
+          "entity_path": [],
+          "group_overrids": [
+            {
+              "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+              "type_index": 0,
+              "property_overrides": [
+                {
+                  "name": "rotate.z",
+                  "value": -90.75949096679688,
+                  "type": "float"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "intel_core_i5_processor_package_1",
+      "path": "/intel_core_i5_processor_package_1",
+      "type": "AssetActor",
+      "transform": {
+        "position": [
+          30.100000381469727,
+          -7.182402610778809,
+          0.646884143
+        ],
+        "rotation": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/intelcore/intelcore"
+    }
+  ],
+  "package_references": [
+    {
+      "name": "SimpleMovement_Screw",
+      "tech_name": "simplemovement_screw",
+      "author": "Orca",
+      "project_name": "simplemovement_screw"
+    },
+    {
+      "name": "unitree_g1_gripper",
+      "tech_name": "g1_pick_with_gripper",
+      "author": "admin_test_2",
+      "project_name": "default_project"
+    },
+    {
+      "name": "Kitchenware",
+      "tech_name": "kitchenware",
+      "author": "Orca",
+      "project_name": "kitchenware"
+    },
+    {
+      "name": "Warehouse_EmbodiedCompetition_2026Hangzhou",
+      "tech_name": "warehouse_embodiedcompetition_2026hangzhou",
+      "author": "Orca",
+      "project_name": "warehouse_embodiedcompetition_2026hangzhou"
+    }
+  ]
+}

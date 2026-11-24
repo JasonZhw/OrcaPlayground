@@ -1,0 +1,16 @@
+# Reported training versions, Linux x86_64 / Python 3.12.
+# Install torch/torchvision from the cu128 index first; see README.
+# This is not a transitive lock file or a clean-install verification.
+lerobot[pi,training]==0.6.1
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+transformers==5.5.4
+accelerate==1.16.0
+datasets==4.8.5
+huggingface_hub==1.33.0
+torchcodec==0.7.0
+tokenizers==0.22.2
+numpy==2.2.6
+draccus==0.11.6
+# Pillow is selected by the training-only or simulation profile.
+safetensors==0.8.0

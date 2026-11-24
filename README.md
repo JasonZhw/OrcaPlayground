@@ -2,6 +2,8 @@
 
 OrcaGym 示例代码仓库，已集成 OrcaLab 支持。
 
+VLA 训练示例：[V9 蓝色物品夹取：200 条数据、cuRobo 采集与 pi0.5 全参数微调](examples/euler/12_pi05_blue_box/README.md)。
+
 ## 🎯 快速开始
 
 ### 方式 1：使用 OrcaLab 启动（推荐）⭐

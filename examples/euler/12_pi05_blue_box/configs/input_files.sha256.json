@@ -1,0 +1,9 @@
+{
+  "configs/train_config.saved.json": "2ad855777da04f55ae88b2c4b0f1b34d5e80632e44847e7688f2ff2d3aa994ff",
+  "reference/training/convert_raw.py": "7dc289f8bcc6c7bb2d97ec06a5193891798f341e7c0bae0188a1d89e7e650101",
+  "reference/training/train_stage.py": "47e9efd7be8c717dca5d285770ddef3a4abed77dd23b579f0c4fc55c1ee29494",
+  "reference/training/pyproject.toml": "946dee5176aef2d8e04c41ffce654dc3e262f437e5d98b1996d37823da1f1bc1",
+  "reference/training/requirements.txt": "faadfe2fe2fddd9d789580fbf005f3459ad5688ac335e1a63d3e265dfc08dc9a",
+  "reference/training/info.json": "c257b2f8798d483cf8ba4fc0edd717cef746638c9f47ee6da6985b7537ca236d",
+  "reference/training/stats.json": "b6b4f5cd52478b190539cc66d0560aa5012f9090520c9a187687c3404bc80ebe"
+}

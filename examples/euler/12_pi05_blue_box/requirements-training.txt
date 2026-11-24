@@ -1,0 +1,3 @@
+# Exact reported training Pillow; install without the OrcaLab GUI profile.
+-r requirements.txt
+pillow==12.3.0

@@ -1,0 +1,58 @@
+{
+  "source_xml": "scene_contact_v9.xml",
+  "base_position": [
+    29.780029297,
+    -6.955758095,
+    0.790000021
+  ],
+  "base_rotation": [
+    [
+      0.9999121370737345,
+      0.013255871628722445,
+      0.0
+    ],
+    [
+      -0.013255871628722445,
+      0.9999121370737345,
+      -0.0
+    ],
+    [
+      -0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "ee_position_base": [
+    0.31876937189360666,
+    -0.14862926015906203,
+    -0.016000849268789308
+  ],
+  "ee_rotation_base": [
+    [
+      0.9393534498337908,
+      -0.00020007780669837705,
+      0.3429505157515106
+    ],
+    [
+      0.00019159082307365548,
+      0.9999999799278911,
+      5.862741459245124e-05
+    ],
+    [
+      -0.34295052059781506,
+      1.0634307434110538e-05,
+      0.9393534693120578
+    ]
+  ],
+  "joint_names": [
+    "unitree_g1_1_right_shoulder_pitch_joint",
+    "unitree_g1_1_right_shoulder_roll_joint",
+    "unitree_g1_1_right_shoulder_yaw_joint",
+    "unitree_g1_1_right_elbow_joint",
+    "unitree_g1_1_right_wrist_roll_joint",
+    "unitree_g1_1_right_wrist_pitch_joint",
+    "unitree_g1_1_right_wrist_yaw_joint"
+  ],
+  "waist_pitch": 0.35,
+  "simulation_condition": "pelvis fixture; fingers and objects use physical contacts"
+}

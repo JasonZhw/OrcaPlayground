@@ -1,0 +1,29 @@
+# G1PI-exp-001 在 Colab G4 上的训练环境：uv sync 一次装好。torch 与 piper exp-018 同为 2.8.0 + cu128（Blackwell 需要 cu128 以上）。
+[project]
+name = "g1pi-exp-001"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "lerobot[pi,training]==0.6.1",
+    "torchcodec==0.7.0",
+    # 推理服务：openpi 的 websocket + msgpack 协议
+    "websockets",
+    "msgpack",
+    # 画核对图
+    "matplotlib",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

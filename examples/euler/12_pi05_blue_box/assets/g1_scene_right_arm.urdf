@@ -1,0 +1,90 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="scene_g1_right_arm">
+  <link name="base" />
+  <link name="unitree_g1_1_waist_yaw_link_rev_1_0" />
+  <joint name="unitree_g1_1_waist_yaw_link_rev_1_0_fixed" type="fixed">
+    <parent link="base" />
+    <child link="unitree_g1_1_waist_yaw_link_rev_1_0" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+  <link name="unitree_g1_1_waist_roll_link_rev_1_0" />
+  <joint name="unitree_g1_1_waist_roll_link_rev_1_0_fixed" type="fixed">
+    <parent link="unitree_g1_1_waist_yaw_link_rev_1_0" />
+    <child link="unitree_g1_1_waist_roll_link_rev_1_0" />
+    <origin xyz="-0.00396347 0 0.04399991" rpy="0 0 0" />
+  </joint>
+  <link name="unitree_g1_1_torso_link_rev_1_0" />
+  <joint name="unitree_g1_1_torso_link_rev_1_0_fixed" type="fixed">
+    <parent link="unitree_g1_1_waist_roll_link_rev_1_0" />
+    <child link="unitree_g1_1_torso_link_rev_1_0" />
+    <origin xyz="0 0 0" rpy="-1.201748715e-19 0.35 1.143385153e-18" />
+  </joint>
+  <link name="unitree_g1_1_right_shoulder_pitch_link" />
+  <joint name="unitree_g1_1_right_shoulder_pitch_joint" type="revolute">
+    <parent link="unitree_g1_1_torso_link_rev_1_0" />
+    <child link="unitree_g1_1_right_shoulder_pitch_link" />
+    <origin xyz="0.003955841 -0.100209713 0.247779906" rpy="-0.2793091008 5.494881154e-05 0.0001915906315" />
+    <axis xyz="0 1 0" />
+    <limit lower="-3.08920001914951" upper="2.6703998282467727" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_shoulder_roll_link" />
+  <joint name="unitree_g1_1_right_shoulder_roll_joint" type="revolute">
+    <parent link="unitree_g1_1_right_shoulder_pitch_link" />
+    <child link="unitree_g1_1_right_shoulder_roll_link" />
+    <origin xyz="1.907e-06 -0.038000107 -0.0138309" rpy="0.2792504832 -3.860667341e-11 2.612793593e-10" />
+    <axis xyz="1 0 0" />
+    <limit lower="-2.2514997687839324" upper="1.5881999513633052" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_shoulder_yaw_link" />
+  <joint name="unitree_g1_1_right_shoulder_yaw_joint" type="revolute">
+    <parent link="unitree_g1_1_right_shoulder_roll_link" />
+    <child link="unitree_g1_1_right_shoulder_yaw_link" />
+    <origin xyz="0 -0.006239891 -0.103200138" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-2.6180000032594104" upper="2.6180000032594104" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_elbow_link" />
+  <joint name="unitree_g1_1_right_elbow_joint" type="revolute">
+    <parent link="unitree_g1_1_right_shoulder_yaw_link" />
+    <child link="unitree_g1_1_right_elbow_link" />
+    <origin xyz="0.015785217 0 -0.080518007" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.0471998814554953" upper="2.0943997629284437" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_wrist_roll_link" />
+  <joint name="unitree_g1_1_right_wrist_roll_joint" type="revolute">
+    <parent link="unitree_g1_1_right_elbow_link" />
+    <child link="unitree_g1_1_right_wrist_roll_link" />
+    <origin xyz="0.099998474 -0.001888275 -0.01000011" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-1.9722199242301743" upper="1.9722199242301743" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_wrist_pitch_link" />
+  <joint name="unitree_g1_1_right_wrist_pitch_joint" type="revolute">
+    <parent link="unitree_g1_1_right_wrist_roll_link" />
+    <child link="unitree_g1_1_right_wrist_pitch_link" />
+    <origin xyz="0.038000107 0 6e-08" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.6144298244145452" upper="1.6144298244145452" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_right_wrist_yaw_link" />
+  <joint name="unitree_g1_1_right_wrist_yaw_joint" type="revolute">
+    <parent link="unitree_g1_1_right_wrist_pitch_link" />
+    <child link="unitree_g1_1_right_wrist_yaw_link" />
+    <origin xyz="0.045999527 4.77e-07 0" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.6144298244145452" upper="1.6144298244145452" effort="60" velocity="1.0" />
+  </joint>
+  <link name="unitree_g1_1_arm_r_end_link" />
+  <joint name="unitree_g1_1_arm_r_end_link_fixed" type="fixed">
+    <parent link="unitree_g1_1_right_wrist_yaw_link" />
+    <child link="unitree_g1_1_arm_r_end_link" />
+    <origin xyz="0.040000916 -4.77e-07 0" rpy="0.0002621443341 1.570792865 0.0002621443341" />
+  </joint>
+  <link name="grasp_center" />
+  <joint name="grasp_center_fixed" type="fixed">
+    <parent link="unitree_g1_1_arm_r_end_link" />
+    <child link="grasp_center" />
+    <origin xyz="-0.003075004 -9.54e-07 0.079999924" rpy="0 -1.570791691 0" />
+  </joint>
+</robot>

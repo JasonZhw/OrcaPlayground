@@ -1,0 +1,10 @@
+*.py text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf
+# Preserve exact reference bytes across Windows and Linux checkouts.
+configs/*.saved.json -text
+reference/* -text
+reference/training/** -text
+third_party/openpi/* -text
+assets/*.stl binary

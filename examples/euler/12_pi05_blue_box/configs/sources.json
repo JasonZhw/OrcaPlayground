@@ -1,0 +1,47 @@
+{
+  "verified_on": "2026-11-24",
+  "base": {
+    "repo_id": "lerobot/pi05_base",
+    "repo_type": "model",
+    "revision": "22c30e5b34f9e7ab738b1b34fc2fc5ecfe2d28f0"
+  },
+  "tokenizer": {
+    "repo_id": "google/paligemma-3b-pt-224",
+    "repo_type": "model",
+    "revision": "35e4f46485b4d07967e7e9935bc3786aad50687c"
+  },
+  "raw": {
+    "repo_id": "xiaojia666/g1-blue-intel-single-target-200",
+    "repo_type": "dataset",
+    "revision": "3045d12264211a0d239b2abb3553d2d243df7c99"
+  },
+  "checkpoint": {
+    "repo_id": "Harrysunshine/g1-pi05-v9-single-target-200",
+    "repo_type": "model",
+    "revision": "70ca815cb53de79ae867f83be0bdac3fbc4d7498",
+    "step": 25000,
+    "model_bytes": 9354050752,
+    "model_sha256": "65ea04941cf5f0a6de906baa58e3d39b24b5aaa8cc7f6974b234912b8e2ea78c",
+    "files": {
+      "model.safetensors": 9354050752,
+      "config.json": 2256,
+      "train_config.json": 5509,
+      "policy_preprocessor.json": 1931,
+      "policy_preprocessor_step_3_normalizer_processor.safetensors": 7880,
+      "policy_postprocessor.json": 777,
+      "policy_postprocessor_step_0_unnormalizer_processor.safetensors": 7872
+    }
+  },
+  "curobo": {
+    "repository": "https://github.com/NVlabs/curobo",
+    "revision": "78fd485fa82d9b9a063fb4985e371814587e666a",
+    "api": "MotionPlanner / MotionPlannerCfg",
+    "world": "assets/planning_world_collection.yml"
+  },
+  "openpi_client_candidate": {
+    "repository": "https://github.com/Physical-Intelligence/openpi",
+    "revision": "215abfb217dbac7d5f1273282331b9b1866c0479",
+    "subdirectory": "packages/openpi-client",
+    "provenance": "Observed server checkout; NOT confirmed as the original data conversion version"
+  }
+}

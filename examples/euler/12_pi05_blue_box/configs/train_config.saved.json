@@ -1,0 +1,204 @@
+{
+    "dataset": {
+        "repo_id": "g1-blue-intel-61",
+        "repo_type": "dataset",
+        "root": "/content/data/v9",
+        "episodes": null,
+        "image_transforms": {
+            "enable": true,
+            "max_num_transforms": 1,
+            "random_order": true,
+            "tfs": {
+                "affine": {
+                    "weight": 1.0,
+                    "type": "RandomAffine",
+                    "kwargs": {
+                        "degrees": [
+                            -3.0,
+                            3.0
+                        ],
+                        "translate": [
+                            0.03,
+                            0.03
+                        ],
+                        "scale": [
+                            0.97,
+                            1.03
+                        ]
+                    }
+                }
+            }
+        },
+        "revision": null,
+        "use_imagenet_stats": true,
+        "video_backend": "torchcodec",
+        "return_uint8": false,
+        "depth_output_unit": "mm",
+        "streaming": false,
+        "eval_split": 0.0
+    },
+    "env": null,
+    "policy": {
+        "type": "pi05",
+        "n_obs_steps": 1,
+        "input_features": {
+            "observation.images.image": {
+                "type": "VISUAL",
+                "shape": [
+                    3,
+                    224,
+                    224
+                ]
+            },
+            "observation.images.wrist_image": {
+                "type": "VISUAL",
+                "shape": [
+                    3,
+                    224,
+                    224
+                ]
+            },
+            "observation.state": {
+                "type": "STATE",
+                "shape": [
+                    9
+                ]
+            }
+        },
+        "output_features": {
+            "action": {
+                "type": "ACTION",
+                "shape": [
+                    9
+                ]
+            }
+        },
+        "device": "cuda",
+        "use_amp": false,
+        "use_peft": false,
+        "push_to_hub": false,
+        "repo_id": null,
+        "private": null,
+        "tags": null,
+        "license": null,
+        "pretrained_path": "lerobot/pi05_base",
+        "pretrained_revision": null,
+        "paligemma_variant": "gemma_2b",
+        "action_expert_variant": "gemma_300m",
+        "dtype": "bfloat16",
+        "chunk_size": 50,
+        "n_action_steps": 50,
+        "max_state_dim": 32,
+        "max_action_dim": 32,
+        "num_inference_steps": 10,
+        "time_sampling_beta_alpha": 1.5,
+        "time_sampling_beta_beta": 1.0,
+        "time_sampling_scale": 0.999,
+        "time_sampling_offset": 0.001,
+        "min_period": 0.004,
+        "max_period": 4.0,
+        "use_relative_actions": false,
+        "relative_exclude_joints": [
+            "gripper"
+        ],
+        "action_feature_names": [
+            "action"
+        ],
+        "rtc_config": null,
+        "image_resolution": [
+            224,
+            224
+        ],
+        "empty_cameras": 0,
+        "tokenizer_max_length": 200,
+        "normalization_mapping": {
+            "VISUAL": "IDENTITY",
+            "STATE": "MEAN_STD",
+            "ACTION": "MEAN_STD"
+        },
+        "gradient_checkpointing": true,
+        "compile_model": false,
+        "compile_mode": "max-autotune",
+        "freeze_vision_encoder": false,
+        "train_expert_only": false,
+        "optimizer_lr": 2.5e-05,
+        "optimizer_betas": [
+            0.9,
+            0.95
+        ],
+        "optimizer_eps": 1e-08,
+        "optimizer_weight_decay": 0.01,
+        "optimizer_grad_clip_norm": 1.0,
+        "scheduler_warmup_steps": 1000,
+        "scheduler_decay_steps": 30000,
+        "scheduler_decay_lr": 2.5e-06
+    },
+    "reward_model": null,
+    "output_dir": "/content/run",
+    "job_name": "pi05-v9-single-target-200",
+    "resume": false,
+    "seed": 1000,
+    "cudnn_deterministic": false,
+    "num_workers": 16,
+    "batch_size": 32,
+    "prefetch_factor": 4,
+    "persistent_workers": true,
+    "dataloader_multiprocessing_context": "spawn",
+    "steps": 30000,
+    "env_eval_freq": 20000,
+    "log_freq": 50,
+    "eval_steps": 0,
+    "max_eval_samples": 0,
+    "tolerance_s": 0.0001,
+    "save_checkpoint": true,
+    "save_freq": 2500,
+    "use_policy_training_preset": true,
+    "optimizer": {
+        "type": "adamw",
+        "lr": 2.5e-05,
+        "weight_decay": 0.01,
+        "grad_clip_norm": 1.0,
+        "betas": [
+            0.9,
+            0.95
+        ],
+        "eps": 1e-08
+    },
+    "scheduler": {
+        "type": "cosine_decay_with_warmup",
+        "num_warmup_steps": 1000,
+        "num_decay_steps": 30000,
+        "peak_lr": 2.5e-05,
+        "decay_lr": 2.5e-06
+    },
+    "eval": {
+        "n_episodes": 50,
+        "batch_size": 33,
+        "use_async_envs": true,
+        "recording": false,
+        "recording_repo_id": null,
+        "recording_private": false
+    },
+    "wandb": {
+        "enable": true,
+        "disable_artifact": false,
+        "project": "g1-pi05",
+        "entity": null,
+        "notes": null,
+        "run_id": "tpqb8bgi",
+        "mode": null,
+        "add_tags": true
+    },
+    "peft": null,
+    "job": {
+        "target": null,
+        "image": "huggingface/lerobot-gpu:latest",
+        "timeout": "2d",
+        "detach": false,
+        "tags": []
+    },
+    "save_checkpoint_to_hub": false,
+    "sample_weighting": null,
+    "rename_map": {},
+    "checkpoint_path": null
+}
