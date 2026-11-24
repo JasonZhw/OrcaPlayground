@@ -16,3 +16,7 @@
 pyyaml>=6.0
 pygame
 numba
+av
+opencv-python
+onnxruntime
+
