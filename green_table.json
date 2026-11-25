@@ -1,5 +1,15 @@
 {
-    "version": "3.0",
+    "version": "4.0",
+    "level": {
+        "name": "carring",
+        "path": "levels/e071469a36d3c8aa/autoproductionline_warehouse/carring/carring.spawnable",
+        "package_reference": {
+            "name": "AutoProductionLine_Warehouse",
+            "tech_name": "autoproductionline_warehouse",
+            "author": "Orca",
+            "project_name": "autoproductionline_warehouse"
+        }
+    },
     "viewport_camera_transform": {
         "position": [
             3.0479283332824707,
@@ -279,7 +289,7 @@
                                     "transform": {
                                         "position": [
                                             7.419224262237549,
-                                            -6.491540908813477,
+                                            -7.5,
                                             -4.76837158203125e-07
                                         ],
                                         "rotation": [
@@ -1327,7 +1337,7 @@
             "transform": {
                 "position": [
                     4.691600322723389,
-                    -5.0,
+                    -4.900000095367432,
                     0.0
                 ],
                 "rotation": [
@@ -1364,15 +1374,15 @@
             "type": "AssetActor",
             "transform": {
                 "position": [
-                    4.667966842651367,
+                    4.699999809265137,
                     -6.434239387512207,
                     0.0
                 ],
                 "rotation": [
-                    1.0,
+                    0.7071068109888685,
                     0.0,
                     0.0,
-                    0.0
+                    0.7071067513842252
                 ],
                 "scale": 1.0
             },
@@ -1476,6 +1486,26 @@
                     ]
                 }
             ]
+        }
+    ],
+    "package_references": [
+        {
+            "name": "AutoProductionLine_Warehouse",
+            "tech_name": "autoproductionline_warehouse",
+            "author": "Orca",
+            "project_name": "autoproductionline_warehouse"
+        },
+        {
+            "name": "OfficeSupplies",
+            "tech_name": "officesupplies",
+            "author": "Orca",
+            "project_name": "officesupplies"
+        },
+        {
+            "name": "g1_pick",
+            "tech_name": "g1_pick",
+            "author": "admin_test_2",
+            "project_name": "default_project"
         }
     ]
 }
