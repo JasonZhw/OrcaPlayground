@@ -123,9 +123,10 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
     def move(arm, position, rotation, stage, *, target=None, allow=False, carried=None):
         position, rotation = np.asarray(position), np.asarray(rotation)
         record(stage, position=position.tolist(), rotation=rotation.tolist())
-        # 搬运（carried 非空）用更慢的加减速，避免物体因惯性从夹爪滑落
-        mv = 0.12 if carried is not None else 0.3
-        ma = 0.06 if carried is not None else 0.25
+        # 搬运（carried 非空）用更慢的加减速，避免物体因惯性从夹爪滑落。
+        # 0.12/0.06 实测仍会在横移时脱手（药瓶侧握接触面窄），再降一档。
+        mv = 0.08 if carried is not None else 0.3
+        ma = 0.04 if carried is not None else 0.25
         result = tools.move_to(
             arm,
             *position,
@@ -205,7 +206,16 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
             if arm == "right":
                 # 右臂药盒：确认大模型指点确实落在目标药盒上（防抓错物体），
                 # 只做身份校验，不做几何测量对齐（对齐交给大模型判断）。
-                require(tools.validate_pick_point(key, xy))
+                # 偏了不要立刻判死——实测单次指点偏 2~3cm 很常见，给它重新指的机会。
+                verdict = tools.validate_pick_point(key, xy)
+                for retry in range(2):
+                    if verdict.ok:
+                        break
+                    print(f"  [执行] 指点偏离目标（第 {retry + 1}/3 次）→ 重新定位", flush=True)
+                    record("relocate", message=f"pick point missed target; retry {retry + 1}")
+                    xy = locate(spec.objects[key].desc, "locate_object")
+                    verdict = tools.validate_pick_point(key, xy)
+                require(verdict)
             tools.trial.sync()
             record("build_grasp")
             gt = grasp_builder(scene, arm, key, center_xy=xy)
@@ -363,6 +373,18 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
                 move(arm, hp, hr, key + "_home")
                 record("skipped")
                 continue
+            if carried is None:
+                # 对齐预算用完了：先强制夹一次试试。
+                # 模型常过于保守（一直说"还要再下降"），而位置其实已经够得着；
+                # 夹一次成本很低，闭空就张开，失败再退出。
+                print("  [执行] 对齐预算用完但还没夹 -> 强制夹取一次", flush=True)
+                record("close_forced")
+                forced = tools.grasp_preset(arm, key)
+                record("close_forced", forced)
+                if forced.ok:
+                    carried = forced.detail.get("carried")
+                else:
+                    require(tools.release(arm))
             check(carried is not None, "lost_grasp", "Grasp budget exhausted after regrasp attempts")
 
             # 已夹住 → 切换到入框状态
@@ -403,25 +425,51 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
             move(arm, [p[0], p[1], safe], rotation, key + "_lift_safe", carried=carried)
             check(tools.check_contact(arm, key), "lost_grasp", "Contact lost after lift")
             carry_hint = None
+            landed_on_drop = False  # 搬运途中脱手、但正好掉进筐里
             for carry_try in range(6):
                 carry_stage = key + ("_carry" if carry_try == 0 else f"_carry_{carry_try}")
                 try:
                     move(arm, [above[0], above[1], safe], rotation, carry_stage, carried=carried)
-                    check(tools.check_contact(arm, key), "lost_grasp", "Contact lost during transport")
+                    if not tools.check_contact(arm, key):
+                        # 途中脱手：任务目标是"物体进筐"，不是"物体一直没脱手"。
+                        # 先让它落稳，再按几何判断——正好掉进筐里就算完成，掉在外面才算失败。
+                        tools.trial.hold(200, "settle_after_drop")
+                        tools.trial.sync()
+                        if verify(scene, key, bin_key):
+                            print("  [执行] 途中脱手，但物体落进筐内 -> 视为已放置", flush=True)
+                            record("dropped_into_bin", message="lost grip during transport but landed in bin")
+                            landed_on_drop = True
+                            break
+                        raise StageFailure(SkillResult(False, "lost_grasp", "Contact lost during transport"))
                     break
                 except StageFailure as exc:
+                    # 搬不进去时先问一个更基本的问题：现在其实已经能放了吗？
+                    # 物体就在筐口范围内的话，继续"绕行"只会越绕越远（实测抬 10cm 后
+                    # 直接超出臂展，报 ik_no_solution）。能放就交给放置阶段。
+                    if tools.check_contact(arm, key) and tools.release_ready(key, bin_key):
+                        print("  [执行] 物体已在筐口范围内 -> 跳过绕行，直接进入放置", flush=True)
+                        record("carry_ready", message="already releasable; skip detour")
+                        break
                     blocked = exc.result.code in ("ik_no_solution", "plan_collision")
                     if not blocked or carry_try >= 5:
                         raise
                     # 交给大模型看画面决定怎么绕：优先从空着的一侧横移，其次才抬高
-                    raise_cm, lateral_cm, why = tools.decide_carry_recovery(
+                    recovery = tools.decide_carry_recovery(
                         arm,
                         spec.objects[key].desc,
                         spec.bins[bin_key],
                         tools.observe(),
                         hint=carry_hint or exc.result.code,
                     )
+                    raise_cm, lateral_cm, why = recovery[0], recovery[1], recovery[2]
+                    can_release = bool(recovery[3]) if len(recovery) > 3 else False
                     print(f"  [推理] 搬运被挡，模型决定：{why or '（模型未说明）'}", flush=True)
+                    if can_release:
+                        # 模型看出物体已经在筐口上方、松手就能掉进去 → 不再绕行。
+                        # 放不放仍由放置阶段的几何检查把关。
+                        print("  [执行] 模型判断已在筐口上方 -> 跳过绕行，直接进入放置", flush=True)
+                        record("carry_ready", message="model reports already above bin; skip detour")
+                        break
                     if abs(lateral_cm) > 0.1:
                         above = above + np.array([lateral_cm / 100.0, 0.0, 0.0])
                     if raise_cm > 0.1:
@@ -445,6 +493,16 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
                         raise_cm=raise_cm,
                         lateral_cm=lateral_cm,
                     )
+
+            if landed_on_drop:
+                # 物体已经自己掉进筐里，不需要再走"对齐→释放"的流程，直接收工回家。
+                placed[key] = True
+                hp, hr = home_poses[arm]
+                try:
+                    move(arm, hp, hr, key + "_home")
+                except StageFailure:
+                    print("  [工具] 回家被挡（已记录），继续下一件", flush=True)
+                continue
 
             for attempt in range(6):
                 record("align_place", attempt=attempt + 1)
@@ -472,7 +530,13 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
                     if float(np.linalg.norm(step)) < 0.003:
                         step = np.array([0.0, 0.0])  # 误差已很小，别抖
                     print("  [执行] 模型认为已对齐，但几何未通过 → 朝筐心微调", flush=True)
-                    require(tools.micro_adjust(arm, dx=step[0], dy=step[1], dz=0.0, carried=carried))
+                    nudged = tools.micro_adjust(arm, dx=step[0], dy=step[1], dz=0.0, carried=carried)
+                    record("align_place_nudge", nudged)
+                    if not nudged.ok:
+                        # 朝筐心挪不进去（手臂到极限/会撞）：不能再要求它挪，
+                        # 但也不该让整轮停在这里——物体确实在筐口附近，交给释放与落地校验。
+                        print(f"  [执行] 微调无解（{nudged.code}）→ 按当前位置尝试释放", flush=True)
+                        break
                     continue
                 directions = {"left": (1, 0, 0), "right": (-1, 0, 0), "forward": (0, -1, 0), "backward": (0, 1, 0)}
                 check(action in directions, "unknown", "Placement perception is unknown; release blocked")
@@ -515,11 +579,20 @@ def execute_tasks(tools, spec, home_poses, out, *, grasp_builder=None, placement
             record("verify_placement")
             visual, description = tools.judge(tools.observe(), f"{spec.objects[key].desc}是否已放进{spec.bins[bin_key]}？")
             tools.trial.sync()
-            check(
-                visual is True and bool(verify(scene, key, bin_key)),
-                "missed_bin",
-                f"Placement not confirmed by vision and geometry: {description}",
-            )
+            # 几何是唯一硬判据：物体的真实位姿在仿真里，不会被筐壁挡住视线。
+            # 视觉只作参考——筐壁常常正好挡住刚落进去的物体，模型只能答"没看到"。
+            geo_ok = bool(verify(scene, key, bin_key))
+            if not geo_ok:
+                raise StageFailure(
+                    SkillResult(
+                        False,
+                        "missed_bin",
+                        f"Placement not confirmed by geometry (vision={visual}); {description}",
+                    )
+                )
+            if visual is not True:
+                print("  [执行] 视觉没确认（框内可能被筐壁挡住），几何判定已在框内 -> 记为成功", flush=True)
+                record("verify_vision_unclear", message=str(description)[:160])
             placed[key] = True
             hp, hr = home_poses[arm]
             # 回家：直接回家如果被挡住（手臂在筐上方，回家路径可能擦到筐），

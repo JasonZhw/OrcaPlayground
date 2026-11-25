@@ -242,14 +242,35 @@ class ArmTools:
     # 夹爪
     # ------------------------------------------------------------------
     def validate_pick_point(self, key, xy) -> SkillResult:
-        """Simulation identity guard; no substitution of true XY for visual XY."""
+        """身份校验：模型指的点是不是落在目标物体上（而不是旁边另一个物体）。
+
+        原来用固定半径 25mm。物体落在标定网格之外时（如 herbbox 在 x=0.394，
+        而标定只覆盖 x 0.42~0.66），单应矩阵外推误差本来就有 2~4cm，25mm 会时过时不过。
+        改成"最近邻"判定：离目标比离其它物体都近、且在 45mm 以内就算指对。
+        物体之间相距约 8cm，这个规则仍然能区分，但容忍标定外推的误差。
+        """
         import numpy as np
 
         self.trial.sync()
         xy = np.asarray(xy, dtype=float)
+        if xy.shape != (2,) or not np.isfinite(xy).all():
+            return SkillResult(False, "target_mismatch", "Visual point is not a finite 2D point")
         p, _ = self.scene.body_pose(key)
-        if xy.shape != (2,) or not np.isfinite(xy).all() or np.linalg.norm(xy - p[:2]) > 0.025:
-            return SkillResult(False, "target_mismatch", "Visual point is not within 25 mm of the task box")
+        distance = float(np.linalg.norm(xy - p[:2]))
+        nearest_other = None
+        for other in ("calcium", "melatonin", "herbbox", "pharyngitis"):
+            if other == key or other not in self.scene.bodies:
+                continue
+            q, _ = self.scene.body_pose(other)
+            gap = float(np.linalg.norm(xy - q[:2]))
+            nearest_other = gap if nearest_other is None else min(nearest_other, gap)
+        if distance > 0.045 or (nearest_other is not None and distance > nearest_other):
+            return SkillResult(
+                False,
+                "target_mismatch",
+                f"Visual point is {distance*100:.1f} cm from the target (nearest other object "
+                f"{'-' if nearest_other is None else f'{nearest_other*100:.1f} cm'})",
+            )
         return SkillResult(True, "ok")
 
 
@@ -316,11 +337,15 @@ class ArmTools:
         bottom = item[:, 2].min()
         # Release can occur inside the bin, unlike the stricter hover predicate;
         # unlike landed placement it must contain the entire object footprint.
-        return bool(
+        if not (
             np.isfinite(item).all()
             and np.all(np.abs(item[:, :2]) <= s.m.geom_size[floor, :2] - 0.003)
             and s.m.geom_size[floor, 2] - 0.002 <= bottom <= rim + 0.12
-        )
+        ):
+            return False
+        # 允许和已有物体接触/堆叠：两个大盒子（15cm + 16.2cm）在 27cm 的筐里本来就
+        # 放不下，要求"互不接触"会让第二件永远放不进去。这里只要求整个底面在筐口范围内。
+        return True
 
 
     def grasp_staged(self, arm) -> SkillResult:
@@ -448,12 +473,19 @@ class ArmTools:
         hint_line = f"\n【上一轮结果】{hint}\n" if hint else ""
         prompt = (
             f"机器人正抓着「{object_desc}」，准备放进「{bin_desc}」。"
-            f"这是头部俯视图，能同时看到夹爪抓着的物体和目标筐口。"
+            f"这是头部俯视图，能看到夹爪抓着的物体、筐口，以及筐里**已经放好的其它物体**。"
             f"{hint_line}"
-            f"请判断这个物体现在是否已经落在筐口正上方（下放就能掉进筐里）：\n"
-            f"① action：aligned（在筐口范围内，可以下放）/ left / right / forward / backward（需要往哪移）；\n"
-            f"② dist_cm：还需移动多少厘米（aligned 填 0）；\n"
-            f"③ seen：一句话（≤30字）描述物体相对筐口的位置。\n"
+            "请依次判断：\n"
+            "① 筐里现在有什么：已放了哪些物体？占在哪一侧？哪一侧还空着？\n"
+            "② 这个物体是否已经在筐口正上方（松手就能掉进筐里）？\n"
+            "③ 还没到的话，往哪个方向挪多少厘米能进筐口；到了就选 aligned。\n"
+            "   （允许落在已有物体旁边、甚至压在上面——不必要求互不接触。）\n"
+            "【方向怎么定】以前视俯视图为准（图里机器人在下方、远处在上方）：\n"
+            "  物体在画面偏左 → left；偏右 → right；\n"
+            "  物体更靠上（离机器人更远）→ forward；更靠下（离机器人更近）→ backward。\n"
+            "action：aligned（可以下放）/ left / right / forward / backward（往哪挪）；\n"
+            "dist_cm：还要挪多少厘米（aligned 填 0）；\n"
+            "seen：一句话（≤40字）写清「筐内已有什么 + 本次落点在哪一侧」。\n"
             "只输出 JSON（action 放第一个），不要代码块："
             '{"action":"aligned","dist_cm":0,"seen":"..."}'
         )
@@ -473,43 +505,50 @@ class ArmTools:
     def decide_carry_recovery(self, arm, object_desc, bin_desc, images, hint=None):
         """搬运被下方物体挡住时，让大模型看画面决定怎么绕过去。
 
-        可选项不止"抬高"：如果筐口某一侧空着，横着偏过去往往更省事。
-        返回 (raise_cm, lateral_cm, reason)；lateral_cm 正数=画面右，负数=画面左。
+        可选项不止"抬高"：如果筐口某一侧空着，横着偏过去往往更省事；
+        但最常见的答案是"其实现在就能松手"——所以先问"能不能直接放"。
+        返回 (raise_cm, lateral_cm, reason, can_release)。
         """
         import json
         import re
 
         if not images or not hasattr(self.backend, "ask"):
-            return 6.0, 0.0, "模型无响应，默认抬高"
+            return 6.0, 0.0, "模型无响应，默认抬高", False
         head = images.get("head_cam")
         if head is None:
-            return 6.0, 0.0, "无头部相机，默认抬高"
+            return 6.0, 0.0, "无头部相机，默认抬高", False
         hint_line = f"\n【上一轮结果】{hint}\n" if hint else ""
         prompt = (
-            f"机器人抓着「{object_desc}」要搬到「{bin_desc}」，但水平搬运时下方被东西挡住、过不去。"
-            f"这是头部俯视图，能看到筐口以及周围哪些方向是空的。{hint_line}"
-            f"请像人一样决定怎么绕过去最省事：可以抬高从上方过，也可以从空着的那一侧横向绕过去（左右哪边空就往哪边偏）。\n"
-            f"要求：优先横向绕（如果左右有空位），实在没空位才抬高。\n"
-            '只输出 JSON，不要代码块：{"raise_cm":0,"lateral_cm":6,"reason":"右边空可以右移绕过"}'
+            f"机器人抓着「{object_desc}」，目标是「{bin_desc}」。水平搬运时被挡住了。"
+            f"这是头部俯视图，能看到筐口、筐里已有的物体、以及周围哪些方向是空的。{hint_line}"
+            "请先回答最重要的一件事：**物体现在是不是已经在筐口正上方、松手就能掉进去？**\n"
+            "  如果已经在了 → can_release=true，不要再绕，raise_cm 和 lateral_cm 都填 0；\n"
+            "  如果还没到   → can_release=false，再决定怎么过去：\n"
+            "      · 左右哪边空就从哪边横向绕（优先，成本低）\n"
+            "      · 实在没空位才抬高\n"
+            "只输出 JSON，不要代码块："
+            '{"can_release":false,"raise_cm":0,"lateral_cm":6,"reason":"右边空，横向绕过去"}'
         )
         try:
             raw = self.backend.ask([_to_jpg(head)], prompt)
         except Exception:
-            return 6.0, 0.0, "模型无响应，默认抬高"
+            return 6.0, 0.0, "模型无响应，默认抬高", False
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
-            return 6.0, 0.0, "输出无法解析，默认抬高"
+            return 6.0, 0.0, "输出无法解析，默认抬高", False
         try:
             obj = json.loads(m.group(0))
         except (TypeError, ValueError):
-            return 6.0, 0.0, "输出无法解析，默认抬高"
+            return 6.0, 0.0, "输出无法解析，默认抬高", False
+        reason = str(obj.get("reason", "") or "").strip()[:40]
+        if bool(obj.get("can_release", False)):
+            return 0.0, 0.0, reason or "已在筐口上方，直接下放", True
         try:
             raise_cm = float(min(max(float(obj.get("raise_cm", 0)), 0.0), 12.0))
             lateral_cm = float(min(max(float(obj.get("lateral_cm", 0)), -12.0), 12.0))
         except (TypeError, ValueError):
-            return 6.0, 0.0, "数值非法，默认抬高"
-        reason = str(obj.get("reason", "") or "").strip()[:40]
-        return raise_cm, lateral_cm, reason
+            return 6.0, 0.0, "数值非法，默认抬高", False
+        return raise_cm, lateral_cm, reason, False
 
     def plan_placement(self, arm, object_desc, bin_desc, images):
         """放置规划：大模型看筐内情况，决定放筐里的哪个位置（相对筐中心的偏移）。
@@ -638,16 +677,32 @@ _TMP_DIR = None
 def _to_jpg(arr):
     """ndarray → jpg 路径（模型后端需要文件路径）。
 
-    复用同一个临时目录 + 同一个文件名：每次调用覆盖写，避免每次观测都新建目录。
+    文件名按图像内容哈希生成：一次请求里会有多张图，用固定文件名会让它们互相覆盖，
+    后端读到的全是最后写入的那张（实测导致"两张图完全一致"、模型只能盲猜）。
+    内容相同的帧复用同一个文件。
     """
+    import hashlib
     import pathlib
     import tempfile
+    import time
 
+    import numpy as np
     from PIL import Image
 
     global _TMP_DIR
     if _TMP_DIR is None:
         _TMP_DIR = pathlib.Path(tempfile.mkdtemp(prefix="med_agent_"))
-    p = _TMP_DIR / "view.jpg"
-    Image.fromarray(arr).save(p, "JPEG", quality=85)
+    digest = hashlib.sha1(np.ascontiguousarray(arr).tobytes()).hexdigest()[:16]
+    p = _TMP_DIR / f"view_{digest}.jpg"
+    if not p.exists():
+        Image.fromarray(arr).save(p, "JPEG", quality=85)
+        try:
+            files = list(_TMP_DIR.glob("view_*.jpg"))
+            if len(files) > 500:
+                cutoff = time.time() - 60
+                for old_file in files:
+                    if old_file != p and old_file.stat().st_mtime < cutoff:
+                        old_file.unlink(missing_ok=True)
+        except OSError:
+            pass
     return str(p)

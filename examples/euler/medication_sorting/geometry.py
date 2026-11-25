@@ -32,6 +32,8 @@ def placement_satisfied(scene, object_key, bin_key):
 
 
 # --- 任务几何常量 ---
+# 落点槽位（筐内局部坐标，单位 m）：同一筐里的两件物体分别偏两侧，互不挤压。
+# 数值不宜取到筐壁极限——放得太靠边，机械臂反而做不到那么准（会偏出去）。
 DROP_SLOTS = {
     "calcium": [0, -0.045],
     "melatonin": [0, 0.045],
@@ -39,7 +41,8 @@ DROP_SLOTS = {
     "herbbox": [-0.021, 0],
 }
 # Side-grasped bottles need more wrist/rim clearance than top-grasped boxes.
-RELEASE_BOTTOM_CLEARANCE = {"calcium": 0.02, "melatonin": 0.02, "pharyngitis": 0.02, "herbbox": 0.02}
+# 盒类扁而大，从高处落下容易一边磕到筐壁翻出去 → 释放点压低一点。
+RELEASE_BOTTOM_CLEARANCE = {"calcium": 0.02, "melatonin": 0.02, "pharyngitis": 0.01, "herbbox": 0.01}
 HOVER_RIM_CLEARANCE = 0.06
 BOTTLE_CARRY_EXTRA_HEIGHT = 0.03
 
