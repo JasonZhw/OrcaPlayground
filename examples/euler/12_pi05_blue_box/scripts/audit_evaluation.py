@@ -34,7 +34,15 @@ def probe_video(path):
 
 def audit_trial(folder, result, settings, probe=probe_video):
     require(type(result["success"]) is bool, "Invalid success flag")
-    require(result["policy_actions_replaced"] == 0, "Policy action replacement reported")
+    processing = settings.get("action_processing", "raw")
+    require(processing in {"raw", "clip"}, "Unsupported action processing")
+    require(result.get("action_processing", "raw") == processing,
+            "Action processing mismatch")
+    if processing == "clip":
+        require(settings.get("expert_takeover") is False
+                and result.get("expert_takeover") is False, "Expert takeover not excluded")
+    else:
+        require(result["policy_actions_replaced"] == 0, "Policy action replacement reported")
     require(result["image_mode"] == settings["image_mode"], "Image mode mismatch")
     require(result["control_hz"] == 50, "Control frequency mismatch")
     count = result["num_frames"]
@@ -69,8 +77,25 @@ def audit_trial(folder, result, settings, probe=probe_video):
     require(chunks.ndim == 3 and chunks.shape[0] in allowed_counts
             and chunks.shape[1:] == (50, 9) and np.isfinite(chunks).all(),
             "Invalid prediction chunks")
-    require(np.array_equal(chunks.reshape(-1, 9)[:count], arrays["action"]),
-            "Recorded commands differ from policy predictions")
+    predicted = chunks.reshape(-1, 9)[:count]
+    if processing == "clip":
+        limits = np.asarray(settings["action_limits"], dtype=float)
+        require(limits.shape == (9, 2) and np.isfinite(limits).all()
+                and np.all(limits[:, 0] <= limits[:, 1]), "Invalid actuator limits")
+        raw = arrays["action_raw"]
+        require(raw.shape == (count, 9) and np.isfinite(raw).all(),
+                "Invalid raw policy actions")
+        require(np.array_equal(predicted, raw), "Raw actions differ from policy predictions")
+        expected = np.clip(raw, limits[:, 0], limits[:, 1])
+        require(np.array_equal(expected, arrays["action"]),
+                "Recorded commands differ from declared actuator clipping")
+        changed = int(np.any(raw != arrays["action"], axis=1).sum())
+        require(type(result["policy_actions_replaced"]) is int
+                and result["policy_actions_replaced"] == changed,
+                "Processed action count mismatch")
+    else:
+        require(np.array_equal(predicted, arrays["action"]),
+                "Recorded commands differ from policy predictions")
     closed, active, stable = False, False, 0
     lift = 0.0
     for i in range(count):

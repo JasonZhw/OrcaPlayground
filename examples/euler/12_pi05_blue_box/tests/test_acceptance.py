@@ -159,6 +159,59 @@ class AcceptanceTests(unittest.TestCase):
                 report = audit(root, self.video)
                 self.assertFalse(report["audit_passed"])
 
+    def clipped_fixture(self, root):
+        folder = self.fixture(root)
+        settings = json.loads((root / "settings.json").read_text())
+        settings.update(action_processing="clip", expert_takeover=False,
+                        action_limits=[[-0.7, 0.5]] * 9)
+        write(root / "settings.json", settings)
+        with np.load(folder / "predicted_chunks.npz", allow_pickle=False) as data:
+            chunks = data["actions"].copy()
+        chunks[0, 0, 7:] = -0.71
+        np.savez(folder / "predicted_chunks.npz", actions=chunks)
+        path = folder / "trajectory.npz"
+        with np.load(path, allow_pickle=False) as data:
+            arrays = {key: data[key] for key in data.files}
+        arrays["action_raw"] = chunks.reshape(-1, 9)[:51].copy()
+        limits = np.asarray(settings["action_limits"], dtype=float)
+        arrays["action"] = np.clip(arrays["action_raw"], limits[:, 0], limits[:, 1])
+        np.savez(path, **arrays)
+        result = json.loads((folder / "result.json").read_text())
+        result.update(action_processing="clip", expert_takeover=False, policy_actions_replaced=1)
+        write(folder / "result.json", result)
+        summary = json.loads((root / "summary.json").read_text())
+        summary["trials"] = [result]
+        write(root / "summary.json", summary)
+        return folder
+
+    def test_audits_clipping_and_rejects_tampered_raw_or_executed_actions(self):
+        for field in (None, "action_raw", "action"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                folder = self.clipped_fixture(root)
+                if field:
+                    path = folder / "trajectory.npz"
+                    with np.load(path, allow_pickle=False) as data:
+                        arrays = {key: data[key] for key in data.files}
+                    arrays[field][0, 7] = -0.6
+                    np.savez(path, **arrays)
+                report = audit(root, self.video)
+                self.assertEqual(report["audit_passed"], field is None, report)
+
+    def test_rejects_false_clipping_count_and_expert_takeover(self):
+        for field, value in (("policy_actions_replaced", 0), ("expert_takeover", True),
+                             ("action_processing", "raw")):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                folder = self.clipped_fixture(root)
+                result = json.loads((folder / "result.json").read_text())
+                result[field] = value
+                write(folder / "result.json", result)
+                summary = json.loads((root / "summary.json").read_text())
+                summary["trials"] = [result]
+                write(root / "summary.json", summary)
+                self.assertFalse(audit(root, self.video)["audit_passed"])
+
     def test_profile_checks_missing_and_mismatched_packages(self):
         def version(name):
             if name == "lerobot":
@@ -181,6 +234,17 @@ class AcceptanceTests(unittest.TestCase):
             check_environment.main()
         self.assertEqual(error.exception.code, 1)
         self.assertEqual(json.loads(output.getvalue())["version_issues"], [issue])
+
+    def test_dependency_conflict_fails_even_when_pinned_versions_match(self):
+        output = io.StringIO()
+        failed = subprocess.CompletedProcess([], 1, "incompatible dependencies", "")
+        with patch.object(sys, "argv", ["check", "--profile", "training", "--strict-versions"]), \
+                patch.object(check_environment, "check_versions", return_value=({}, [])), \
+                patch.object(check_environment.subprocess, "run", return_value=failed), \
+                redirect_stdout(output), self.assertRaises(SystemExit) as error:
+            check_environment.main()
+        self.assertEqual(error.exception.code, 1)
+        self.assertFalse(json.loads(output.getvalue())["pip_check_passed"])
 
     def test_provenance_hashes_actual_files_without_deployment_paths(self):
         with tempfile.TemporaryDirectory() as directory:

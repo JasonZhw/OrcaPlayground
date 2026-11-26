@@ -1,0 +1,4 @@
+# Compatible build helpers shared by cuRobo and LeRobot.
+packaging==25.0
+setuptools-scm==9.2.2
+vcs-versioning==1.1.1

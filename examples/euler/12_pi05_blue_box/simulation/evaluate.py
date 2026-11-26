@@ -82,12 +82,13 @@ def trial(env, cameras, runtime, folder, seed, max_steps, max_joint_jump):
             if index % 50 == 0:
                 chunk, _ = runtime.predict(state, images["head_cam"], images["camera_right"])
                 chunks.append(chunk.copy())
-            action = chunk[index % 50].copy()
+            raw_action = chunk[index % 50].copy()
+            if raw_action.shape != (9,) or not np.isfinite(raw_action).all():
+                raise RuntimeError("invalid_policy_action_abort")
+            limits = env.ctrl_limits[env.action_ids]
+            action = np.clip(raw_action, limits[:, 0], limits[:, 1])
             if np.max(np.abs(action[:7] - previous[:7])) > max_joint_jump:
                 raise RuntimeError("joint_jump_abort")
-            limits = env.ctrl_limits[env.action_ids]
-            if ((action < limits[:, 0]) | (action > limits[:, 1])).any():
-                raise RuntimeError("actuator_range_abort")
             previous = action.copy()
             command[env.action_ids] = action
             closed_once |= bool(np.all(action[7:] < 0.0))
@@ -107,7 +108,7 @@ def trial(env, cameras, runtime, folder, seed, max_steps, max_joint_jump):
             good = stable_frame(max_lift, clearance, supported, released, speed) and active_release
             stable = stable + 1 if good and error is None else 0
             rows.append({
-                "state": state, "action": action,
+                "state": state, "action": action, "action_raw": raw_action,
                 "state_after": env.data.qpos[env.qids[env.action_ids]].copy(),
                 "qpos_after": env.data.qpos.copy(), "target": obs["target"],
                 "ee": obs["ee"], "released": released,
@@ -139,7 +140,10 @@ def trial(env, cameras, runtime, folder, seed, max_steps, max_joint_jump):
             np.savez_compressed(folder / "predicted_chunks.npz", actions=np.stack(chunks))
         result.update(num_frames=len(rows), max_lift_m=max_lift,
                       stable_success_steps=stable, active_release=active_release,
-                      image_mode=runtime.image_mode, policy_actions_replaced=0,
+                      image_mode=runtime.image_mode, action_processing="clip",
+                      policy_actions_replaced=sum(
+                          int(np.any(row["action_raw"] != row["action"])) for row in rows),
+                      expert_takeover=False,
                       control_hz=50, initial_target_z=initial_z)
         if code == 0 and rows:
             probe = json.loads(subprocess.check_output([
@@ -165,7 +169,8 @@ def main():
     parser.add_argument("--max-joint-jump", type=float, default=0.35)
     parser.add_argument("--image-mode", choices=("pad", "legacy-stretch"), default="pad")
     args = parser.parse_args()
-    if args.trials < 1 or args.max_steps < 1 or args.max_joint_jump <= 0:
+    if (args.trials < 1 or args.max_steps < 1
+            or not np.isfinite(args.max_joint_jump) or args.max_joint_jump <= 0):
         parser.error("Trial count, step count and jump limit must be positive")
     if args.output.exists():
         parser.error("Output already exists")
@@ -180,19 +185,20 @@ def main():
         args.output.mkdir(parents=True)
         save(args.output / "provenance.json",
              provenance(args.checkpoint.resolve(), args.tokenizer.resolve()))
-        save(args.output / "settings.json", {
-            "scene_sha256": hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
-            "checkpoint_name": args.checkpoint.name, "trials": args.trials,
-            "seeds": [args.seed + i for i in range(args.trials)],
-            "image_mode": args.image_mode, "max_steps": args.max_steps,
-            "max_joint_jump_rad": args.max_joint_jump,
-            "fixed_scene": True, "policy_actions_replaced": 0,
-            "success": "lift>8cm; full box inside; floor support; active release; speed<2cm/s for 50 steps",
-            "guard": "abort only; this portable guard differs from the historical motion-envelope guard",
-        })
         env = EvaluationEnv()
         cameras = None
         try:
+            save(args.output / "settings.json", {
+                "scene_sha256": hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
+                "checkpoint_name": args.checkpoint.name, "trials": args.trials,
+                "seeds": [args.seed + i for i in range(args.trials)],
+                "image_mode": args.image_mode, "max_steps": args.max_steps,
+                "max_joint_jump_rad": args.max_joint_jump,
+                "fixed_scene": True, "action_processing": "clip", "expert_takeover": False,
+                "action_limits": env.ctrl_limits[env.action_ids].tolist(),
+                "success": "lift>8cm; full box inside; floor support; active release; speed<2cm/s for 50 steps",
+                "guard": "clip actuator targets; abort on collision, joint jump or inactive-arm motion",
+            })
             cameras = Cameras(env)
             results = []
             for i in range(args.trials):

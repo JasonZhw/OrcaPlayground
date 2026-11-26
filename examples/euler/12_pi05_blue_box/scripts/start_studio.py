@@ -44,7 +44,7 @@ def main():
         executable = shutil.which("orcalab")
         if not executable:
             raise RuntimeError("Install the pinned orca-lab package")
-        subprocess.run([executable, str(ROOT), "--layout", str(ROOT / "assets/scene_v9.json")], check=True)
+        subprocess.run([executable, str(ROOT), "--layout", "blank"], check=True)
 
 
 if __name__ == "__main__":

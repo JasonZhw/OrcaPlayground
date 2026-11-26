@@ -16,7 +16,7 @@
 | `simulation/build_model.py`、`environment.py` | 固定腰腿的模型生成与 Euler 公共 API 控制器 |
 | `simulation/planner_v9.py` | 固定版本 cuRobo 新 API 的运动规划 |
 | `simulation/collect.py`、`collector_base.py`、`collect_200.py` | 专家动作、接触门控、200条采集与继续采集 |
-| `simulation/camera_capture.py` | 头部/右腕同步取帧 |
+| `simulation/camera_capture.py` | 头部/右腕同步取帧与退出时释放服务端推流 |
 | `simulation/placement.py`、`evaluate.py` | 整体入框判定与策略闭环评测 |
 | `scripts/download_assets.py` | 固定版本下载与权重哈希校验 |
 | `scripts/convert_raw.py`、`image_preprocessing.py` | 原始录像/NPZ 转 LeRobot v3.0 |
@@ -30,8 +30,8 @@
 | `reference/training/` | 原转换程序、训练入口、包清单、info.json、stats.json |
 | `third_party/openpi/` | 官方图像函数原文件及许可证 |
 | `third_party/curobo/` | 上游许可证；库本体按固定提交安装 |
-| `tests/` | 配方保护、预处理、处理器覆盖与放置判据测试 |
-| `docs/ACCEPTANCE.md` | 干净安装、闭环对照、证据发布及重新训练的分阶段验收流程 |
+| `tests/` | 配方、预处理、放置判据、限幅记录核验、依赖与相机生命周期测试 |
+| `docs/ACCEPTANCE.md` | 安装、闭环评测、证据发布及重新训练的分阶段验收流程 |
 
 不收录原机器连接脚本、个人运行日志、云盘同步清理程序。
 Hugging Face 数据和权重保留在原仓库，由下载脚本获取。

@@ -11,6 +11,7 @@ if [[ "${1:-}" == "--training-only" ]]; then
 else
   conda run -n orca python -m pip install -r requirements.txt -r requirements-simulation.txt
   conda run -n orca python -m pip install --no-build-isolation \
+    -c requirements-build.txt \
     "nvidia-curobo[cu12-torch] @ git+https://github.com/NVlabs/curobo.git@78fd485fa82d9b9a063fb4985e371814587e666a"
 fi
 conda run -n orca python -m pip check

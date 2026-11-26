@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import platform
 import shutil
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 from packaging.requirements import Requirement
@@ -73,10 +75,17 @@ def main():
                     raise ValueError(f"Nonportable or missing scene asset: {xml.name}")
     installed, issues = check_versions(profile)
     runtime_issues = []
+    dependencies = subprocess.run(
+        [sys.executable, "-m", "pip", "check"], capture_output=True, text=True, timeout=120,
+    )
+    if dependencies.returncode:
+        runtime_issues.append("Installed package dependencies are incompatible")
     report = {"source_hashes_verified": len(sources), "portable_scene_assets": True,
               "profile": profile, "python": platform.python_version(),
               "packages": installed, "version_issues": issues,
-              "runtime_issues": runtime_issues}
+              "runtime_issues": runtime_issues,
+              "pip_check_passed": dependencies.returncode == 0,
+              "pip_check_output": (dependencies.stdout + dependencies.stderr).strip()}
     if platform.python_version_tuple()[:2] != ("3", "12"):
         issues.append({"package": "Python", "required": "3.12.x",
                        "installed": platform.python_version()})

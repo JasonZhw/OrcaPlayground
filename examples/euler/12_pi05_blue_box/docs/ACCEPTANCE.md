@@ -1,7 +1,7 @@
 # 公开流程验收
 
 本页用于区分“材料与脚本齐全”“已有权重能完成任务”和“重新训练能复现成绩”。
-目前还没有公开入口的新闭环分数。审计工具通过也不代表模型全部成功。
+审计工具通过表示记录一致，任务结果以本轮完整测试和录像为准。
 验证进度见 [REPRODUCTION_STATUS.md](REPRODUCTION_STATUS.md)。
 
 ## 第一阶段：已有权重闭环推理
@@ -23,6 +23,7 @@ cuRobo 的安装版本会检查，但提交身份尚不能由包版本证明，�
 下载失败应先处理访问权限和网络问题，不能跳过模型与 tokenizer。
 
 ```bash
+hf auth login
 python reproduce.py download checkpoint --destination models/pi05-025000
 python reproduce.py download tokenizer --destination models/tokenizer
 python reproduce.py prepare-scene
@@ -49,10 +50,9 @@ python reproduce.py check-scene --output outputs/scene-check
 脚本不进行物体识别，非空画面不证明资源外观一致。
 `configs/visual_resources.json` 明确保留未知内容版本，不以布局哈希代替纹理包哈希。
 
-## 第二阶段：预处理对照与结果审计
+## 第二阶段：闭环评测与结果审计
 
-在相同场景、权重、种子和保护参数下运行两组；不要覆盖或删除失败。
-先完成一个配置的全部试验，再启动下一组。
+完成场景检查后运行评测，保留全部成功、失败和中止记录。
 
 ```bash
 python reproduce.py evaluate \
@@ -60,24 +60,17 @@ python reproduce.py evaluate \
   --output outputs/eval-pad-10 --trials 10 --seed 2026110700 --image-mode pad
 python reproduce.py audit \
   --evaluation outputs/eval-pad-10 --output outputs/eval-pad-10-audit.json
-
-python reproduce.py evaluate \
-  --checkpoint models/pi05-025000 --tokenizer models/tokenizer \
-  --output outputs/eval-legacy-10 --trials 10 --seed 2026110700 --image-mode legacy-stretch
-python reproduce.py audit \
-  --evaluation outputs/eval-legacy-10 --output outputs/eval-legacy-10-audit.json
 ```
 
-`pad` 与训练转换的图像几何一致；`legacy-stretch` 对照历史缩放。
-两种模式均使用当前保护器，因此均须报告自己的新成绩。
-默认参数只是待验收配置，不表示已经选定最高成功率配置。
-对照后选择配置，再用不同种子进行独立验收并冻结发布版本。
+统一使用 `pad`，与训练转换的图像几何一致；图像处理和录像均由脚本完成。
+当前流程执行器限幅后检查关节跳变，
+同时保留碰撞与左臂保持检查。
 
 每组输出包含：
 
 | 文件 | 含义 |
 | --- | --- |
-| `settings.json` | 请求次数、种子、预处理、关节跳变阈值及成功条件 |
+| `settings.json` | 请求次数、种子、预处理、执行器限幅范围、关节跳变阈值及成功条件 |
 | `provenance.json` | Git 提交/修改状态、源文件哈希、实际权重/tokenizer 哈希、环境与视觉资源版本状态 |
 | `summary.json` | 全部试验及完成状态；中止和失败计入分母 |
 | `trial_*/initial_*.png` | 每次试验的初始头部/右腕画面 |
@@ -87,7 +80,8 @@ python reproduce.py audit \
 | 独立目录外的 `*-audit.json` | 逐次记录检查、日志判据复核、证据文件 SHA256 |
 
 审计拒绝未完成的试验组、额外/缺失的试验目录、视频帧数或频率错误、
-与预测块不一致的命令，以及不满足日志中稳定条件的成功标记。
+与预测块不一致的原始输出、与限幅公式不一致的命令，
+以及不满足日志中稳定条件的成功标记。
 无动作/录像的早期错误保留为失败，并会导致证据审计不通过；不要删除后重算。
 审计仅核对记录，不独立重演物理或判断视频中是否夹歪。
 仍需人工查看全部录像，检查碰框、姿态、松爪和放置位置。

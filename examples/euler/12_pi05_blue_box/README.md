@@ -4,12 +4,21 @@
 本示例提供原始数据下载、cuRobo 自动采集、Euler 场景、数据转换、完整训练配置、
 权重下载与闭环录像评测。训练使用 LeRobot 的 pi0.5 实现，全参数更新。
 
-建议首先下载已有权重进行推理，然后复现原始 200 条数据的训练。
-重新采集属于另一条可选流程，不需要为下载权重测试先采集 200 条。
-验证范围与尚未执行的步骤见 [复现状态](docs/REPRODUCTION_STATUS.md)。
-**当前发布状态：流程入口已提供，公开入口的完整闭环验收尚未完成，
-不能承诺下载后达到历史 100% 成功率。**
-新机器安装、初始画面检查、预处理对照与证据发布步骤见
+## 先选择学习路线
+
+| 目标 | 需要完成 | 可以跳过 |
+| --- | --- | --- |
+| 快速复现夹取任务 | 安装仿真环境、同步场景资源、下载完整策略包和 tokenizer、闭环推理与结果检查 | 示范数据下载、采集、数据转换、训练 |
+| 用课程数据重新训练 | 下载公开的 200 条示范、转换数据、准备独立训练环境、全参数微调、评测新检查点 | 重新采集 |
+| 自行采集与训练 | 配置任务与场景、cuRobo 采集、转换新数据、全参数微调、评测新检查点 | 课程原始数据下载 |
+
+**第一次操作，先走快速复现路线。**公开策略包已经使用 200 条示范完成训练，
+下载的是第 25,000 个训练步的完整模型及处理器，不是 25,000 条数据，也不是 25,000 个训练轮次。
+公开 200 条示范是可选的训练材料，只使用现成模型推理时无需下载。
+飞书教程对应第三、四、五、九章；第六至八章用于学习采集、转换与训练。
+所有命令中的路径均相对于本示例目录。
+验证范围见 [复现状态](docs/REPRODUCTION_STATUS.md)。
+安装、初始画面检查与结果核验步骤见
 [公开流程验收](docs/ACCEPTANCE.md)。
 
 ## 资源与版本
@@ -59,6 +68,7 @@ python -m pip install torch==2.8.0+cu128 torchvision==0.23.0+cu128 \
   --index-url https://download.pytorch.org/whl/cu128
 python -m pip install -r requirements.txt -r requirements-simulation.txt
 python -m pip install --no-build-isolation \
+  -c requirements-build.txt \
   'nvidia-curobo[cu12-torch] @ git+https://github.com/NVlabs/curobo.git@78fd485fa82d9b9a063fb4985e371814587e666a'
 python -m pip check
 ```
@@ -72,20 +82,24 @@ python -m pip check
 
 ## 使用已有权重做 10 次闭环推理
 
+先通过自己的 Hugging Face 账号取得 PaliGemma 访问权限，再登录并下载：
+
 ```bash
+hf auth login
 python reproduce.py download checkpoint --destination models/pi05-025000
 python reproduce.py download tokenizer --destination models/tokenizer
 python reproduce.py prepare-scene
 ```
 
-先阅读 [场景与采集](docs/SCENE_AND_COLLECTION.md)，登录 OrcaLab 并同步布局列出的四个资源包。
-在有显示环境的终端启动：
+在有显示环境的终端启动空白 Studio：
 
 ```bash
 python reproduce.py studio
 ```
 
-等待 OrcaStudio 加载完成，在第二个同环境终端进入本目录：
+首次初始化完成后，按提示重新启动。登录 OrcaLab，按
+[场景与采集](docs/SCENE_AND_COLLECTION.md) 订阅并同步四个资源包。
+资源准备好后，在第二个同环境终端进入本目录：
 
 ```bash
 python reproduce.py studio --load
@@ -106,6 +120,7 @@ python reproduce.py audit \
 输出为 `summary.json` 和每次试验的 `cameras.mp4`、`trajectory.npz`、
 `predicted_chunks.npz`、`result.json`。中止与失败也计入分母。
 模型每次预测 50 个绝对动作，执行 50 步后重规划；控制频率 50Hz。
+脚本自动处理执行器限幅、相机采样与双相机录像，无需手动操作录屏软件。
 成功要求夹起超过 8cm、整个盒子位于框内、接触框底、主动松爪并脱离夹爪，
 且速度低于 2cm/s 连续稳定 50 个周期。碰撞或关节跳变只会中止测试。
 这是仿真入口，不连接真实机器人。
@@ -113,19 +128,17 @@ python reproduce.py audit \
 每次试验保留初始双相机 PNG。审计通过只表示记录一致，
 仍须人工审核全部录像；审计报告中的成功率保留失败和中止试验。
 
-历史记录采用直接拉伸图像；对照该预处理时使用新的输出目录：
+统一使用命令中的 `--image-mode pad`：头部与右腕图像保持比例缩放至 224×224，
+不足部分补黑边，与训练转换一致。脚本自动完成并记录，无需单独运行预处理命令。
+这只影响模型输入，不改变相机视角或电脑录屏设置。
 
-```bash
-python reproduce.py evaluate \
-  --checkpoint models/pi05-025000 --tokenizer models/tokenizer \
-  --output outputs/eval-legacy-10 --trials 10 --image-mode legacy-stretch
-```
-
-新脚本的保护器与历史保护器有区别，不能视为原始分数的逐项复现。
-默认 `pad` 与训练转换的图像几何一致，尚无此新入口的成功率。
-历史固定场景记录及限制见 [评测说明](docs/EVALUATION.md)。
+每轮记录实际成功数与总请求数；当前任务的物品和木框位置固定。
+结果文件和成功判据见 [评测说明](docs/EVALUATION.md)。
 
 ## 复现原始 200 条数据的全参数训练
+
+公开数据来自本项目原始 200 条成功示范，见上方资源表。
+在独立的训练环境中完成以下步骤：
 
 ```bash
 python reproduce.py download raw --destination data/raw_v9
@@ -153,7 +166,8 @@ python reproduce.py train \
 
 ## 自行用 cuRobo 采集
 
-准备并启动同一场景后：
+更换场景或物品时，先相应调整布局、采集目标与规划配置，再采集适用于新任务的示范。
+下面的命令使用课程自带的 V9 场景。准备并启动场景、完成基础模型与 tokenizer 下载后：
 
 ```bash
 python reproduce.py collect --output data/new_v9 --count 200
@@ -162,6 +176,8 @@ python reproduce.py prepare-train \
   --dataset-root data/new_v9_lerobot --dataset-id local/new-v9 --new-collection \
   --base-model models/pi05-base --tokenizer models/tokenizer \
   --output-dir outputs/train-new-v9 --config-out outputs/new_train_config.json
+python reproduce.py train \
+  --config-path outputs/new_train_config.json --tokenizer models/tokenizer
 ```
 
 采集脚本包含预抓取、对准、闭爪、双侧接触、抬起、搬运、放置、松爪、撤离和稳定阶段；

@@ -9,11 +9,17 @@ class Cameras:
         self.env = env
         self.names = ["head_cam", "camera_right"]
         self.manager = env.get_recorder_manager()
-        for i, name in enumerate(self.names):
-            env.start_streaming(
-                name, capture_rgb=True, capture_depth=False, width=640, height=480,
-                color_port=7070 + i * 2, max_buffer_frames=2500,
-            )
+        self.started = []
+        try:
+            for i, name in enumerate(self.names):
+                self.started.append(name)
+                env.start_streaming(
+                    name, capture_rgb=True, capture_depth=False, width=640, height=480,
+                    color_port=7070 + i * 2, max_buffer_frames=2500,
+                )
+        except Exception:
+            self.close()
+            raise
         self.index = 100000
         time.sleep(0.5)
 
@@ -36,4 +42,15 @@ class Cameras:
         return result
 
     def close(self):
-        self.manager.stop_all()
+        errors = []
+        try:
+            for name in self.started:
+                try:
+                    self.manager.set_streaming_enabled(name, False)
+                except Exception as error:
+                    errors.append(error)
+        finally:
+            self.manager.stop_all()
+        if errors:
+            raise RuntimeError("Failed to stop server camera streams") from errors[0]
+        self.started.clear()

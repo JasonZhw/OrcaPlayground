@@ -1,4 +1,5 @@
 # Euler simulation and synchronized OrcaStudio camera capture.
+-r requirements-build.txt
 orca-lab==26.9.1
 orca-gym[sensors]==26.9.1
 mujoco==3.12.0
